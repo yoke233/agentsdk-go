@@ -193,6 +193,32 @@ func TestDurationFromParam(t *testing.T) {
 	}
 }
 
+func TestDurationFromParamEmptyString(t *testing.T) {
+	if got, err := durationFromParam("   "); err != nil || got != 0 {
+		t.Fatalf("expected empty string to yield zero duration, got %v err=%v", got, err)
+	}
+}
+
+func TestDurationFromParamNegativeDuration(t *testing.T) {
+	if _, err := durationFromParam(time.Duration(-1)); err == nil {
+		t.Fatalf("expected error for negative duration value")
+	}
+}
+
+func TestBashToolExecuteNilContext(t *testing.T) {
+	tool := NewBashTool()
+	if _, err := tool.Execute(nil, map[string]any{"command": "true"}); err == nil || !strings.Contains(err.Error(), "context is nil") {
+		t.Fatalf("expected nil context error, got %v", err)
+	}
+}
+
+func TestBashToolExecuteUninitialised(t *testing.T) {
+	var tool BashTool
+	if _, err := tool.Execute(context.Background(), map[string]any{"command": "true"}); err == nil || !strings.Contains(err.Error(), "not initialised") {
+		t.Fatalf("expected not initialised error, got %v", err)
+	}
+}
+
 func TestCombineOutput(t *testing.T) {
 	tests := []struct {
 		name   string

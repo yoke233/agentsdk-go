@@ -25,6 +25,9 @@ const (
 	mcpClientVersion          = "dev"
 )
 
+// mcpTransportBuilder enables tests to swap transport implementations.
+var mcpTransportBuilder = buildMCPTransport
+
 // NewRegistry creates a registry backed by the default validator.
 func NewRegistry() *Registry {
 	return &Registry{
@@ -118,7 +121,7 @@ func (r *Registry) RegisterMCPServer(serverPath string) error {
 	opCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	transport, err := buildMCPTransport(context.Background(), serverPath)
+	transport, err := mcpTransportBuilder(context.Background(), serverPath)
 	if err != nil {
 		return err
 	}

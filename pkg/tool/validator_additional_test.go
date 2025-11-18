@@ -2,6 +2,7 @@ package tool
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -98,5 +99,46 @@ func TestValidatorCoversAllNumberTypes(t *testing.T) {
 	}
 	if err := v.Validate(map[string]any{"int": "12"}, schema); err == nil {
 		t.Fatalf("expected failure for string integer")
+	}
+}
+
+func TestValidatorObjectArrayNullBranches(t *testing.T) {
+	v := DefaultValidator{}
+	schema := &JSONSchema{
+		Type: "object",
+		Properties: map[string]any{
+			"obj":  map[string]any{"type": "object"},
+			"arr":  map[string]any{"type": "array"},
+			"null": map[string]any{"type": "null"},
+		},
+	}
+
+	if err := v.Validate(map[string]any{
+		"obj":  map[string]any{"k": "v"},
+		"arr":  []any{"item"},
+		"null": nil,
+	}, schema); err != nil {
+		t.Fatalf("expected validation success: %v", err)
+	}
+
+	if err := v.Validate(map[string]any{"obj": nil}, schema); err == nil || !strings.Contains(err.Error(), "object") {
+		t.Fatalf("expected object type error, got %v", err)
+	}
+	if err := v.Validate(map[string]any{"arr": "nope"}, schema); err == nil || !strings.Contains(err.Error(), "array") {
+		t.Fatalf("expected array type error, got %v", err)
+	}
+	if err := v.Validate(map[string]any{"null": "x"}, schema); err == nil || !strings.Contains(err.Error(), "null") {
+		t.Fatalf("expected null type error, got %v", err)
+	}
+}
+
+func TestValidatorIgnoresUnknownPropertyDefinitions(t *testing.T) {
+	v := DefaultValidator{}
+	schema := &JSONSchema{
+		Type:       "object",
+		Properties: map[string]any{"loose": struct{}{}},
+	}
+	if err := v.Validate(map[string]any{"loose": 123}, schema); err != nil {
+		t.Fatalf("expected unknown definition to be ignored, got %v", err)
 	}
 }

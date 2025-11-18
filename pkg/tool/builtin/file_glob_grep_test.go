@@ -2,6 +2,7 @@ package toolbuiltin
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,6 +92,50 @@ func TestGlobToolListsMatches(t *testing.T) {
 	}
 	if !strings.Contains(res.Output, "a.txt") || strings.Contains(res.Output, "b.go") {
 		t.Fatalf("unexpected glob output: %s", res.Output)
+	}
+}
+
+func TestGlobToolTruncatesResults(t *testing.T) {
+	skipIfWindows(t)
+	dir := cleanTempDir(t)
+	for i := 0; i < 2; i++ {
+		name := fmt.Sprintf("f%d.txt", i)
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
+			t.Fatalf("write fixture: %v", err)
+		}
+	}
+	tool := NewGlobToolWithRoot(dir)
+	tool.maxResults = 1
+	res, err := tool.Execute(context.Background(), map[string]any{"pattern": "*.txt"})
+	if err != nil {
+		t.Fatalf("glob execute failed: %v", err)
+	}
+	data, _ := res.Data.(map[string]any)
+	if data == nil || data["truncated"] != true {
+		t.Fatalf("expected truncated flag, got %#v", res.Data)
+	}
+	if !strings.Contains(res.Output, "truncated") {
+		t.Fatalf("expected truncated note in output: %s", res.Output)
+	}
+}
+
+func TestGlobToolContextCancellation(t *testing.T) {
+	skipIfWindows(t)
+	dir := cleanTempDir(t)
+	tool := NewGlobToolWithRoot(dir)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := tool.Execute(ctx, map[string]any{"pattern": "*"}); err == nil || !strings.Contains(err.Error(), "context canceled") {
+		t.Fatalf("expected context cancellation, got %v", err)
+	}
+}
+
+func TestGlobToolRejectsEscapePatterns(t *testing.T) {
+	skipIfWindows(t)
+	dir := cleanTempDir(t)
+	tool := NewGlobToolWithRoot(dir)
+	if _, err := tool.Execute(context.Background(), map[string]any{"pattern": "../*.txt"}); err == nil || !strings.Contains(err.Error(), "path not in sandbox") {
+		t.Fatalf("expected sandbox error, got %v", err)
 	}
 }
 
