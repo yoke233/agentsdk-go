@@ -4,10 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**agentsdk-go** is a production-ready Go Agent SDK that implements Claude Code's 7 core capabilities with a pure architecture approach. This SDK is designed for CLI, CI/CD, and enterprise platform scenarios with a focus on simplicity (KISS), modularity, and zero-dependency core.
+**agentsdk-go** is a from-scratch, production-ready Go Agent SDK that mirrors Claude Code's 7 core capabilities with a pure architecture approach benchmarked to Claude Code's stack. This SDK targets CLI, CI/CD, and enterprise platforms, prioritizing KISS-friendly modularity, a zero-dependency core, and the middleware interception system that extends Claude Code with a unique innovation.
 
 **Key metrics**:
-- ~6k LOC core code (down from ~18k)
+- ~6k LOC core code
 - 91.1% average test coverage across new modules
 - Zero external dependencies in core packages
 - Agent core loop <300 lines
@@ -17,7 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Pure Claude Code Architecture (13 independent packages)
 
 ```
-Core Layer (6 new modules):
+Core Layer (6 modules):
 ├── agent/       - Agent core loop (<300 lines)
 ├── middleware/  - 6-point interception system
 ├── model/       - Anthropic model adapter

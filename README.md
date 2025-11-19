@@ -1,8 +1,8 @@
 # agentsdk-go
 
-**纯 Claude Code 架构的 Go Agent SDK**
+**全新设计的纯 Claude Code 架构 Go Agent SDK**
 
-这是一个生产就绪的 Go Agent SDK，完整实现了 Claude Code 的 7 大核心功能，并新增 **6 个 middleware 拦截点**。采用配置驱动架构，支持 CLI、CI/CD 和企业平台等多种使用场景。
+这是一个从零打造、生产就绪的 Go Agent SDK，完整实现了 Claude Code 的 7 大核心功能，并新增 **6 个 middleware 拦截点**。架构对标 Claude Code，但以 Go 实现，并把 middleware 系统作为 Claude Code 原版所没有的核心创新。采用配置驱动架构，支持 CLI、CI/CD 和企业平台等多种使用场景。
 
 ## 核心特性
 
@@ -47,7 +47,7 @@ User Response
 ### ✅ 高质量实现
 
 - **极简核心**：Agent 核心循环 <300 行，KISS 原则
-- **纯架构**：无旧模块依赖，完全重构为纯 Claude Code 架构
+- **纯架构**：全新设计，采用纯 Claude Code 架构设计
 - **测试覆盖率**：新模块平均 **91.1%**，核心模块 ≥95%
 - **配置驱动**：完全兼容 `.claude/` 目录结构
 - **模块化设计**：13 个独立包，职责清晰
@@ -71,7 +71,7 @@ User Response
 └──────────────────────────────────┘
 ```
 
-**无任何旧模块依赖**，代码量从 ~18k 行精简至 ~6k 行核心代码。
+**无任何旧模块依赖**，核心代码仅 ~6k 行，保持易读可维护。
 
 ## 项目结构
 
@@ -101,7 +101,9 @@ agentsdk-go/
 ├── cmd/cli/                    # CLI 入口
 ├── examples/                   # 核心示例
 │   ├── cli/                    # CLI 示例
-│   └── mcp/                    # MCP 客户端示例
+│   ├── http/                   # HTTP 服务器示例
+│   ├── mcp/                    # MCP 客户端示例
+│   └── middleware/             # Middleware 完整示例 ⭐ 新增
 ├── test/integration/           # 集成测试
 ├── tests/                      # 单元测试、基准测试
 └── .claude/specs/              # 开发文档
@@ -190,6 +192,27 @@ runtime, err := api.New(
     },
 )
 ```
+
+**💡 查看完整示例**：[examples/middleware](examples/middleware/) 提供了日志、限流、安全检查、监控等完整的 middleware 实现，展示所有 6 个拦截点的实际应用。
+
+### 体验 Middleware 示例
+
+运行完整的 middleware 示例，体验日志记录、限流、安全检查、监控指标等功能：
+
+```bash
+cd examples/middleware
+export ANTHROPIC_API_KEY=your-api-key
+go run .
+```
+
+该示例展示了：
+- ✅ 6 个拦截点的完整集成
+- ✅ 日志记录与请求追踪
+- ✅ Token bucket 限流
+- ✅ 敏感词过滤与安全检查
+- ✅ 延迟监控与错误统计
+
+详见 [examples/middleware/README.md](examples/middleware/README.md) 获取完整说明。
 
 ### CLI 使用
 
@@ -326,7 +349,7 @@ go tool cover -html=coverage.out
 
 ## 测试覆盖率
 
-### 新核心模块（重构后）
+### 新核心模块（全新设计）
 
 | 模块 | 覆盖率 | 状态 |
 |------|--------|------|
@@ -355,8 +378,8 @@ go tool cover -html=coverage.out
 
 ## 文档
 
-- [开发计划](.claude/specs/claude-code-rewrite/dev-plan.md) - 完整重构计划
-- [完成报告](.claude/specs/claude-code-rewrite/COMPLETION_REPORT.md) - 重构完成报告
+- [开发计划](.claude/specs/claude-code-rewrite/dev-plan.md) - 全新架构设计计划
+- [完成报告](.claude/specs/claude-code-rewrite/COMPLETION_REPORT.md) - 首版发布报告
 - [原完成报告](.claude/specs/agentsdk-go-rewrite/COMPLETION_REPORT.md) - 历史版本
 
 ## 架构设计原则
@@ -443,7 +466,7 @@ ToolMonitorMiddleware := middleware.Middleware{
 | **测试覆盖** | 91.1% | 未知 |
 | **语言** | Go | TypeScript |
 | **代码量** | ~6k LOC | 未知 |
-| **架构** | 纯 Claude Code | 原生 |
+| **架构** | 对标 Claude Code + middleware 增强 | 原生 |
 
 ## 技术栈
 
@@ -466,4 +489,4 @@ ToolMonitorMiddleware := middleware.Middleware{
 
 ---
 
-**重构完成于 2025-11-18** | [查看重构报告](.claude/specs/claude-code-rewrite/COMPLETION_REPORT.md)
+**首版发布于 2025-11-18** | [查看发布报告](.claude/specs/claude-code-rewrite/COMPLETION_REPORT.md)

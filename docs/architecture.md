@@ -74,6 +74,7 @@
 #### 🎯 架构设计
 - **配置分层与 DI**: mastra/agno/openai-agents 通过依赖注入实现松耦合
 - **Middleware Pipeline**: deepagents 的可插拔中间件 (TodoList/Summarization/SubAgent)
+- **六段 Middleware**: agentsdk-go 将 before/after agent/model/tool 共 6 个拦截点串入 Chain，较 Claude Code 的单一 Hook 具有更强的治理粒度
 - **三通道事件**: Kode-agent-sdk 的 Progress/Control/Monitor 解耦设计
 
 #### 🎯 上下文管理
@@ -107,7 +108,60 @@
 | **状态一致性** | Kode-agent-sdk 模板累计污染<br>opencode 分享队列 silent drop<br>kimi-cli 审批未持久化 | 状态丢失<br>难以调试 | WAL + 事务语义<br>错误重试 |
 | **Streaming bug** | mini-claude-code-go 流模式失效<br>anthropic-sdk-go SSE 大小写问题 | 功能不可用<br>线上故障 | 集成测试覆盖<br>Mock 验证 |
 
-### 2.4 技术选型对比
+### 2.4 Middleware 系统设计（agentsdk-go 独有）
+
+#### 2.4.1 设计动机（为何需要 6 个拦截点）
+- **全链路治理**: 在 Agent→Model→Tool→回传的每个阶段暴露可插拔治理面，避免单点 Hook 无法覆盖工具调用与结果回填。
+- **短路保护**: 任一环节发现违规（如越权工具、超时响应）立即中断，减少无效推理成本。
+- **对标 Claude Code**: Claude Code 仅在模型/工具上提供有限 Hook，agentsdk-go 将拦截扩展为 6 段并内建超时，形成差异化优势。
+
+#### 2.4.2 拦截点详解
+- `before_agent`: 会话入口前做租户/速率/审计初始化。
+- `before_model`: Prompt 组装前做上下文裁剪、敏感字段遮蔽。
+- `after_model`: 模型输出后做安全过滤、拒绝理由重写。
+- `before_tool`: 工具调用前校验白名单、参数 Schema、冷却时间。
+- `after_tool`: 结果回填前做降噪、结构化封装、观测指标打点。
+- `after_agent`: 对最终回复做格式化、用量上报、持久化。
+
+#### 2.4.3 Chain 执行器（串行 + 短路 + 超时）
+- **串行执行**: `Chain.Execute` 逐个中间件调用，保持确定性顺序。
+- **短路语义**: 首个返回 error 的中间件立即中断后续执行并让 Agent 失败收敛。
+- **超时保护**: `WithTimeout` 为每个阶段包裹 `context.WithTimeout`，避免慢中间件拖垮会话。
+
+```go
+// pkg/middleware/chain.go
+chain := middleware.NewChain(
+    []middleware.Middleware{audit, limiter, tracer},
+    middleware.WithTimeout(200*time.Millisecond),
+)
+if err := chain.Execute(ctx, middleware.StageBeforeAgent, state); err != nil {
+    return err // 短路
+}
+```
+
+```go
+// pkg/agent/agent.go (节选)
+state := &middleware.State{Agent: c, Values: map[string]any{}}
+_ = a.mw.Execute(ctx, middleware.StageBeforeAgent, state)
+_ = a.mw.Execute(ctx, middleware.StageBeforeModel, state)
+out, _ := a.model.Generate(ctx, c)
+state.ModelOutput = out
+_ = a.mw.Execute(ctx, middleware.StageAfterModel, state)
+// 工具调用前后同理
+```
+
+#### 2.4.4 使用场景
+- **日志/审计**: 统一入口收集 request/工具调用/最终回复三段日志。
+- **限流/配额**: `before_agent` + `before_model` 组合做租户限流和 prompt token 预算。
+- **安全检查**: `before_tool` 过滤危险命令，`after_tool` 做结果脱敏与防注入。
+- **监控/告警**: `after_agent` 上报耗时、QPS、error rate，支持熔断/报警。
+
+#### 2.4.5 实现细节（集成点）
+- **状态传递**: `middleware.State` 贯穿 6 段，记录 `Agent Context`、`ModelOutput`、`ToolCall/Result` 与 `Values` 扩展字段。
+- **线程安全**: `Chain.Use` 内置写锁，运行时追加中间件不会破坏正在执行的链。
+- **零依赖 & 可预测**: 不引入反射/泛型，保持核心 <150 行；相比 Claude Code 的多 Hook 抽象，agentsdk-go 更符合 KISS。
+
+### 2.5 技术选型对比
 
 | 语言 | 优势 | 劣势 | 适用场景 |
 |-----|------|-----|---------|
