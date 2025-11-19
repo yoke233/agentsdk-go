@@ -94,7 +94,7 @@ func TestPackagerImportGuards(t *testing.T) {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
-	if err := tw.WriteHeader(&tar.Header{Name: "../evil", Mode: 0o644, Size: int64(len("data"))}); err != nil {
+	if err := tw.WriteHeader(&tar.Header{Name: "../evil", Mode: 0600, Size: int64(len("data"))}); err != nil {
 		t.Fatalf("write header: %v", err)
 	}
 	if _, err := tw.Write([]byte("data")); err != nil {
@@ -114,7 +114,7 @@ func TestPackagerImportGuards(t *testing.T) {
 	buf.Reset()
 	gz = gzip.NewWriter(&buf)
 	tw = tar.NewWriter(gz)
-	if err := tw.WriteHeader(&tar.Header{Name: "file.txt", Mode: 0o644, Size: int64(len("x"))}); err != nil {
+	if err := tw.WriteHeader(&tar.Header{Name: "file.txt", Mode: 0600, Size: int64(len("x"))}); err != nil {
 		t.Fatalf("write header: %v", err)
 	}
 	if _, err := tw.Write([]byte("x")); err != nil {
@@ -239,7 +239,7 @@ func TestPackagerRestoreEntry(t *testing.T) {
 	if err := p.restoreEntry(dest, dirHeader, nil); err != nil {
 		t.Fatalf("restore dir: %v", err)
 	}
-	fileHeader := &tar.Header{Name: "dir/file.txt", Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len("data"))}
+	fileHeader := &tar.Header{Name: "dir/file.txt", Typeflag: tar.TypeReg, Mode: 0600, Size: int64(len("data"))}
 	if err := p.restoreEntry(dest, fileHeader, bytes.NewReader([]byte("data"))); err != nil {
 		t.Fatalf("restore file: %v", err)
 	}
@@ -271,10 +271,10 @@ func TestPackagerRestoreEntryErrorPaths(t *testing.T) {
 
 	// mkdir failure (parent already file)
 	block := filepath.Join(dest, "file-as-dir")
-	if err := os.WriteFile(block, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(block, []byte("x"), 0600); err != nil {
 		t.Fatalf("write block: %v", err)
 	}
-	header := &tar.Header{Name: "file-as-dir/child.txt", Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len("child"))}
+	header := &tar.Header{Name: "file-as-dir/child.txt", Typeflag: tar.TypeReg, Mode: 0600, Size: int64(len("child"))}
 	if err := p.restoreEntry(dest, header, bytes.NewReader([]byte("child"))); err == nil {
 		t.Fatalf("expected mkdirAll error")
 	}
@@ -284,13 +284,13 @@ func TestPackagerRestoreEntryErrorPaths(t *testing.T) {
 	if err := os.Mkdir(existing, 0o755); err != nil {
 		t.Fatalf("mkdir existing: %v", err)
 	}
-	header = &tar.Header{Name: "existing", Typeflag: tar.TypeReg, Mode: 0o644, Size: 0}
+	header = &tar.Header{Name: "existing", Typeflag: tar.TypeReg, Mode: 0600, Size: 0}
 	if err := p.restoreEntry(dest, header, bytes.NewReader(nil)); err == nil {
 		t.Fatalf("expected open file error")
 	}
 
 	// copy failure
-	header = &tar.Header{Name: "copy.txt", Typeflag: tar.TypeReg, Mode: 0o644, Size: 10}
+	header = &tar.Header{Name: "copy.txt", Typeflag: tar.TypeReg, Mode: 0600, Size: 10}
 	if err := p.restoreEntry(dest, header, errReader{}); err == nil {
 		t.Fatalf("expected copy error")
 	}
@@ -356,7 +356,7 @@ func TestPackagerPackageDirManifestMismatch(t *testing.T) {
 		t.Fatalf("mkdir plugin: %v", err)
 	}
 	entry := []byte("echo hi")
-	if err := os.WriteFile(filepath.Join(dir, "main.sh"), entry, 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "main.sh"), entry, 0600); err != nil {
 		t.Fatalf("write entry: %v", err)
 	}
 	mf := plugins.Manifest{Name: "demo", Version: "1.0.0", Entrypoint: "main.sh", Digest: "deadbeef"}
@@ -364,7 +364,7 @@ func TestPackagerPackageDirManifestMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal manifest: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "manifest.yaml"), data, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "manifest.yaml"), data, 0600); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
 	p, err := NewPackager(root, nil)
@@ -431,7 +431,7 @@ func TestPackagerImportInvalidManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal manifest: %v", err)
 	}
-	writeTarFile(t, tw, "manifest.yaml", data, 0o644)
+	writeTarFile(t, tw, "manifest.yaml", data, 0600)
 	if err := tw.Close(); err != nil {
 		t.Fatalf("close tar writer: %v", err)
 	}
@@ -445,7 +445,7 @@ func TestPackagerImportInvalidManifest(t *testing.T) {
 
 func TestEnsureEmptyDirAdditionalGuards(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "file"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "file"), []byte("x"), 0600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	if err := ensureEmptyDir(dir); !errors.Is(err, ErrDestinationExists) {
@@ -473,7 +473,7 @@ func setupPlugin(t *testing.T, root, name string, entry []byte) string {
 		t.Fatalf("mkdir plugin: %v", err)
 	}
 	entryPath := filepath.Join(dir, "main.sh")
-	if err := os.WriteFile(entryPath, entry, 0o755); err != nil {
+	if err := os.WriteFile(entryPath, entry, 0600); err != nil {
 		t.Fatalf("write entry: %v", err)
 	}
 	mf := plugins.Manifest{Name: name, Version: "1.0.0", Entrypoint: "main.sh", Digest: sha256Bytes(entry)}
@@ -481,7 +481,7 @@ func setupPlugin(t *testing.T, root, name string, entry []byte) string {
 	if err != nil {
 		t.Fatalf("marshal manifest: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "manifest.yaml"), data, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "manifest.yaml"), data, 0600); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
 	return dir

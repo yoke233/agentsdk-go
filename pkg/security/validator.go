@@ -30,8 +30,6 @@ type Validator struct {
 func NewValidator() *Validator {
 	return &Validator{
 		bannedCommands: map[string]string{
-			"rm":        "file deletion is not allowed",
-			"rmdir":     "directory deletion is not allowed",
 			"dd":        "raw disk writes are unsafe",
 			"mkfs":      "filesystem formatting is unsafe",
 			"fdisk":     "partition editing is unsafe",
@@ -50,10 +48,18 @@ func NewValidator() *Validator {
 			"/dev/",
 			"../",
 		},
+		// bannedFragments 捕捉危险的删除模式，而不是彻底禁止 rm/rmdir
 		bannedFragments: []string{
 			"-rf /",
 			"--no-preserve-root",
 			"--preserve-root=false",
+			"rm -rf",
+			"rm -fr",
+			"rm -r",
+			"rm --recursive",
+			"rmdir -p",
+			"rm *",
+			"rm /",
 		},
 		maxCommandBytes: 4096,
 		maxArgs:         64,
