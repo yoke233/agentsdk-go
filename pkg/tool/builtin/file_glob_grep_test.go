@@ -9,72 +9,6 @@ import (
 	"testing"
 )
 
-func TestFileToolWriteReadDelete(t *testing.T) {
-	skipIfWindows(t)
-	dir := cleanTempDir(t)
-	tool := NewFileToolWithRoot(dir)
-	ctx := context.Background()
-
-	if tool.Name() == "" || tool.Description() == "" || tool.Schema() == nil {
-		t.Fatalf("metadata not populated")
-	}
-
-	_, err := tool.Execute(ctx, map[string]any{"operation": "write", "path": "note.txt", "content": "hello"})
-	if err != nil {
-		t.Fatalf("write failed: %v", err)
-	}
-
-	res, err := tool.Execute(ctx, map[string]any{"operation": "read", "path": "note.txt"})
-	if err != nil {
-		t.Fatalf("read failed: %v", err)
-	}
-	if !strings.Contains(res.Output, "hello") {
-		t.Fatalf("unexpected output: %s", res.Output)
-	}
-
-	if _, err := tool.Execute(ctx, map[string]any{"operation": "delete", "path": "note.txt"}); err != nil {
-		t.Fatalf("delete failed: %v", err)
-	}
-
-	tool.maxBytes = 1
-	if _, err := tool.Execute(ctx, map[string]any{"operation": "write", "path": "note.txt", "content": "toolong"}); err == nil {
-		t.Fatalf("expected size error")
-	}
-	if _, err := tool.Execute(ctx, map[string]any{"operation": "read", "path": "note.txt"}); err == nil {
-		t.Fatalf("expected size error on read")
-	}
-	if _, err := tool.Execute(ctx, map[string]any{"operation": "read", "path": dir}); err == nil {
-		t.Fatalf("expected directory read error")
-	}
-
-	if _, err := tool.Execute(ctx, map[string]any{"operation": "unknown", "path": "note.txt"}); err == nil {
-		t.Fatalf("expected error for invalid operation")
-	}
-}
-
-func TestFileToolDeleteErrors(t *testing.T) {
-	skipIfWindows(t)
-	dir := cleanTempDir(t)
-	tool := NewFileToolWithRoot(dir)
-	if _, err := tool.Execute(context.Background(), map[string]any{"operation": "delete", "path": "missing.txt"}); err == nil {
-		t.Fatalf("expected missing file error")
-	}
-	if _, err := tool.Execute(context.Background(), map[string]any{"operation": "write", "path": ""}); err == nil {
-		t.Fatalf("expected empty path error")
-	}
-	if _, err := tool.Execute(context.Background(), map[string]any{"operation": "write", "path": "no-content"}); err == nil {
-		t.Fatalf("expected missing content error")
-	}
-
-	sub := filepath.Join(dir, "subdir")
-	if err := os.MkdirAll(sub, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if _, err := tool.Execute(context.Background(), map[string]any{"operation": "delete", "path": "subdir"}); err == nil {
-		t.Fatalf("expected directory delete rejection")
-	}
-}
-
 func TestGlobToolListsMatches(t *testing.T) {
 	skipIfWindows(t)
 	dir := cleanTempDir(t)
@@ -188,11 +122,11 @@ func TestGrepToolSearchDirectory(t *testing.T) {
 }
 
 func TestGlobAndGrepMetadata(t *testing.T) {
-	if NewFileTool().Name() == "" {
-		t.Fatalf("file tool name empty")
+	if r := NewReadTool(); r.Description() == "" || r.Name() == "" || r.Schema() == nil {
+		t.Fatalf("read tool metadata missing")
 	}
 	if g := NewGlobTool(); g.Schema() == nil || g.Name() == "" || g.Description() == "" {
-		t.Fatalf("metadata missing")
+		t.Fatalf("glob metadata missing")
 	}
 	if g := NewGrepTool(); g.Description() == "" || g.Name() == "" || g.Schema() == nil {
 		t.Fatalf("grep metadata missing")
