@@ -19,7 +19,7 @@ func TestWatcherHotReload(t *testing.T) {
 	require.NoError(t, os.WriteFile(cfgPath, []byte(`version: 1.0.0
 plugins:
   - name: watch
-`), 0o644))
+`), 0600))
 
 	loader, err := NewLoader(root, WithTrustStore(ts))
 	require.NoError(t, err)
@@ -41,7 +41,7 @@ plugins:
 	require.NoError(t, os.WriteFile(cfgPath, []byte(`version: 1.1.0
 plugins:
   - name: watch
-`), 0o644))
+`), 0600))
 
 	select {
 	case version := <-changes:
@@ -61,7 +61,7 @@ func TestWatcherEmitsErrorsOnInvalidConfig(t *testing.T) {
 	require.NoError(t, os.WriteFile(cfgPath, []byte(`version: 1.0.0
 plugins:
   - name: bad
-`), 0o644))
+`), 0600))
 
 	loader, err := NewLoader(root, WithTrustStore(ts))
 	require.NoError(t, err)
@@ -74,7 +74,7 @@ plugins:
 	_, err = watcher.Start()
 	require.NoError(t, err)
 
-	require.NoError(t, os.WriteFile(cfgPath, []byte(`version: not-a-semver`), 0o644))
+	require.NoError(t, os.WriteFile(cfgPath, []byte(`version: not-a-semver`), 0600))
 
 	select {
 	case err := <-errs:

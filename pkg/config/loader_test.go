@@ -22,7 +22,7 @@ plugins:
   - name: hello
     path: plugins/hello
 `)
-	require.NoError(t, os.WriteFile(filepath.Join(claude, "config.yaml"), cfgBody, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(claude, "config.yaml"), cfgBody, 0600))
 
 	loader, err := NewLoader(root, WithTrustStore(ts))
 	require.NoError(t, err)
@@ -43,7 +43,7 @@ func TestLoaderAutoDiscoversPluginsWhenListMissing(t *testing.T) {
 	writePlugin(t, claude, "auto", signer)
 
 	cfgBody := []byte(`version: 2.1.3`)
-	require.NoError(t, os.WriteFile(filepath.Join(claude, "config.yaml"), cfgBody, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(claude, "config.yaml"), cfgBody, 0600))
 
 	loader, err := NewLoader(root, WithTrustStore(ts))
 	require.NoError(t, err)
@@ -65,7 +65,7 @@ func TestLoaderRollbackOnInvalidReload(t *testing.T) {
 	require.NoError(t, os.WriteFile(cfgPath, []byte(`version: 0.1.0
 plugins:
   - name: bad
-`), 0o644))
+`), 0600))
 
 	loader, err := NewLoader(root, WithTrustStore(ts))
 	require.NoError(t, err)
@@ -73,7 +73,7 @@ plugins:
 	require.NoError(t, err)
 	require.Equal(t, "0.1.0", cfg.Version)
 
-	require.NoError(t, os.WriteFile(cfgPath, []byte(""), 0o644))
+	require.NoError(t, os.WriteFile(cfgPath, []byte(""), 0600))
 	_, err = loader.Load()
 	require.Error(t, err)
 	last, ok := loader.Last()

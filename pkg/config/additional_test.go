@@ -265,7 +265,7 @@ func TestWatcherAddWatchBranchesAndReloadSkip(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(claude, "config.yaml"), []byte(`version: 1.0.0
 plugins:
   - name: watch
-	`), 0o600))
+`), 0o600))
 	loader, err := NewLoader(root, WithTrustStore(ts))
 	require.NoError(t, err)
 	w, err := NewWatcher(loader)
@@ -296,7 +296,7 @@ func TestLoaderAbsolutePluginPathRejected(t *testing.T) {
 plugins:
   - name: abs
     path: /tmp/evil
-`), 0o644))
+`), 0o600))
 	ts := plugins.NewTrustStore()
 	ts.AllowUnsigned(true)
 	loader, err := NewLoader(root, WithTrustStore(ts))
@@ -313,7 +313,7 @@ func TestLoadPluginRejectsTraversal(t *testing.T) {
 plugins:
   - name: evil
     path: ../evil
-`), 0o644))
+`), 0o600))
 	ts := plugins.NewTrustStore()
 	ts.AllowUnsigned(true)
 	loader, err := NewLoader(root, WithTrustStore(ts))

@@ -21,7 +21,7 @@ func TestFileToolExecuteHandlesCancelledContext(t *testing.T) {
 	skipIfWindows(t)
 	dir := cleanTempDir(t)
 	target := filepath.Join(dir, "data.txt")
-	if err := os.WriteFile(target, []byte("ok"), 0o644); err != nil {
+	if err := os.WriteFile(target, []byte("ok"), 0600); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
 	tool := NewFileToolWithRoot(dir)
@@ -36,7 +36,7 @@ func TestFileToolReadFileHonorsSizeLimit(t *testing.T) {
 	skipIfWindows(t)
 	dir := cleanTempDir(t)
 	target := filepath.Join(dir, "big.txt")
-	if err := os.WriteFile(target, []byte("1234"), 0o644); err != nil {
+	if err := os.WriteFile(target, []byte("1234"), 0600); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
 	tool := NewFileToolWithRoot(dir)

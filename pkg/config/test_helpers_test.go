@@ -28,7 +28,7 @@ func writePlugin(t *testing.T, claudeDir, name string, signer ed25519.PrivateKey
 	pluginDir := filepath.Join(claudeDir, "plugins", name)
 	require.NoError(t, os.MkdirAll(pluginDir, 0o755))
 	entryPath := filepath.Join(pluginDir, "main.js")
-	require.NoError(t, os.WriteFile(entryPath, []byte("console.log('hi')"), 0o644))
+	require.NoError(t, os.WriteFile(entryPath, []byte("console.log('hi')"), 0600))
 	digest := sha256.Sum256([]byte("console.log('hi')"))
 
 	mf := &plugins.Manifest{
@@ -46,6 +46,6 @@ func writePlugin(t *testing.T, claudeDir, name string, signer ed25519.PrivateKey
 	manifestBytes, err := yaml.Marshal(mf)
 	require.NoError(t, err)
 	manifestPath := filepath.Join(pluginDir, "manifest.yaml")
-	require.NoError(t, os.WriteFile(manifestPath, manifestBytes, 0o644))
+	require.NoError(t, os.WriteFile(manifestPath, manifestBytes, 0600))
 	return manifestPath
 }

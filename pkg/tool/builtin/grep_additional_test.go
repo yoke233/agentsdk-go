@@ -73,7 +73,7 @@ func TestSearchFileTruncatesAtLimit(t *testing.T) {
 	skipIfWindows(t)
 	dir := cleanTempDir(t)
 	target := filepath.Join(dir, "matches.txt")
-	if err := os.WriteFile(target, []byte("hit\nhit\n"), 0o644); err != nil {
+	if err := os.WriteFile(target, []byte("hit\nhit\n"), 0600); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
 	tool := NewGrepToolWithRoot(dir)
@@ -95,7 +95,7 @@ func TestSearchFileTruncatesAtLimit(t *testing.T) {
 func TestGrepSearchDirectoryRespectsCancellation(t *testing.T) {
 	skipIfWindows(t)
 	dir := cleanTempDir(t)
-	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("hit"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("hit"), 0600); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
 	tool := NewGrepToolWithRoot(dir)
@@ -114,10 +114,10 @@ func TestGrepSearchDirectoryHonorsDepthLimit(t *testing.T) {
 	if err := os.MkdirAll(nested, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "root.txt"), []byte("hit"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "root.txt"), []byte("hit"), 0600); err != nil {
 		t.Fatalf("write root: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(nested, "deep.txt"), []byte("hit"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(nested, "deep.txt"), []byte("hit"), 0600); err != nil {
 		t.Fatalf("write deep: %v", err)
 	}
 	tool := NewGrepToolWithRoot(dir)
@@ -142,7 +142,7 @@ func TestGrepSearchDirectorySkipsSymlinkDirs(t *testing.T) {
 	if err := os.Mkdir(realDir, 0o755); err != nil {
 		t.Fatalf("mkdir real: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(realDir, "file.txt"), []byte("hit"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(realDir, "file.txt"), []byte("hit"), 0600); err != nil {
 		t.Fatalf("write real: %v", err)
 	}
 	linkDir := filepath.Join(dir, "alias")

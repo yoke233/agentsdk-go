@@ -78,8 +78,8 @@ func TestFileToolDeleteErrors(t *testing.T) {
 func TestGlobToolListsMatches(t *testing.T) {
 	skipIfWindows(t)
 	dir := cleanTempDir(t)
-	_ = os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one"), 0o644)
-	_ = os.WriteFile(filepath.Join(dir, "b.go"), []byte("two"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one"), 0600)
+	_ = os.WriteFile(filepath.Join(dir, "b.go"), []byte("two"), 0600)
 	fileDirErr := NewGlobToolWithRoot(dir)
 	if _, err := fileDirErr.Execute(context.Background(), map[string]any{"pattern": "*", "dir": "a.txt"}); err == nil {
 		t.Fatalf("expected dir validation error")
@@ -100,7 +100,7 @@ func TestGlobToolTruncatesResults(t *testing.T) {
 	dir := cleanTempDir(t)
 	for i := 0; i < 2; i++ {
 		name := fmt.Sprintf("f%d.txt", i)
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0600); err != nil {
 			t.Fatalf("write fixture: %v", err)
 		}
 	}
@@ -144,7 +144,7 @@ func TestGrepToolSearchesFile(t *testing.T) {
 	dir := cleanTempDir(t)
 	target := filepath.Join(dir, "sample.txt")
 	content := "first line\nfoo line\nbar"
-	if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(target, []byte(content), 0600); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
 
@@ -170,8 +170,8 @@ func TestGrepToolSearchesFile(t *testing.T) {
 func TestGrepToolSearchDirectory(t *testing.T) {
 	skipIfWindows(t)
 	dir := cleanTempDir(t)
-	_ = os.WriteFile(filepath.Join(dir, "one.txt"), []byte("foo"), 0o644)
-	_ = os.WriteFile(filepath.Join(dir, "two.txt"), []byte("foo again"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "one.txt"), []byte("foo"), 0600)
+	_ = os.WriteFile(filepath.Join(dir, "two.txt"), []byte("foo again"), 0600)
 	sub := filepath.Join(dir, "sub")
 	_ = os.Mkdir(sub, 0o755)
 	_ = os.Symlink(filepath.Join(dir, "one.txt"), filepath.Join(sub, "link.txt"))

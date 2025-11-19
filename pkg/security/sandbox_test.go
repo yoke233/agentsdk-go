@@ -232,7 +232,7 @@ func TestSandboxRejectsSymlinkEscape(t *testing.T) {
 				t.Helper()
 				outsideDir := t.TempDir()
 				target := filepath.Join(outsideDir, "secret.txt")
-				if err := os.WriteFile(target, []byte("secret"), 0o644); err != nil {
+				if err := os.WriteFile(target, []byte("secret"), 0o600); err != nil {
 					t.Fatalf("write secret: %v", err)
 				}
 				nested := filepath.Join(root, "nested")
@@ -322,7 +322,7 @@ func TestSandboxValidatePathResolverError(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		t.Fatalf("mkdir nested: %v", err)
 	}
-	if err := os.WriteFile(target, []byte("data"), 0o644); err != nil {
+	if err := os.WriteFile(target, []byte("data"), 0o600); err != nil {
 		t.Fatalf("write target: %v", err)
 	}
 

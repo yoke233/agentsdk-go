@@ -248,7 +248,7 @@ func TestDiscoverManifestsRespectsTrustStore(t *testing.T) {
 	mf.Signature = sig
 	data, err := yaml.Marshal(mf)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(plug, "manifest.yaml"), data, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(plug, "manifest.yaml"), data, 0o600))
 	store := NewTrustStore()
 	store.Register("dev", pub)
 	manifests, err := DiscoverManifests(root, store)
@@ -263,11 +263,11 @@ func TestDiscoverManifestsPropagatesLoadError(t *testing.T) {
 	require.NoError(t, os.MkdirAll(bad, 0o755))
 	// create manifest with impossible digest
 	entry := filepath.Join(bad, "main.sh")
-	require.NoError(t, os.WriteFile(entry, []byte("echo bad"), 0o755))
+	require.NoError(t, os.WriteFile(entry, []byte("echo bad"), 0o755)) //nolint:gosec // executable test script
 	mf := Manifest{Name: "bad", Version: "1.0.0", Entrypoint: "main.sh", Digest: strings.Repeat("0", 10)}
 	data, err := yaml.Marshal(mf)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(bad, "manifest.yaml"), data, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(bad, "manifest.yaml"), data, 0o600))
 	store := NewTrustStore()
 	store.AllowUnsigned(true)
 	_, err = DiscoverManifests(root, store)
@@ -281,7 +281,7 @@ func TestLoadManifestPathIsDirAndDecodeError(t *testing.T) {
 	require.Error(t, err)
 
 	file := filepath.Join(dir, "manifest.yaml")
-	require.NoError(t, os.WriteFile(file, []byte("::invalid"), 0o644))
+	require.NoError(t, os.WriteFile(file, []byte("::invalid"), 0600))
 	_, err = LoadManifest(file)
 	require.Error(t, err)
 }
@@ -289,7 +289,7 @@ func TestLoadManifestPathIsDirAndDecodeError(t *testing.T) {
 func TestLoadManifestEntryEscapesRoot(t *testing.T) {
 	dir := t.TempDir()
 	entry := filepath.Join(dir, "main.sh")
-	require.NoError(t, os.WriteFile(entry, []byte("echo ok"), 0o755))
+	require.NoError(t, os.WriteFile(entry, []byte("echo ok"), 0600))
 	d := sha256.Sum256([]byte("echo ok"))
 	mf := Manifest{
 		Name:       "escape",
@@ -299,7 +299,7 @@ func TestLoadManifestEntryEscapesRoot(t *testing.T) {
 	}
 	data, err := yaml.Marshal(mf)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "manifest.yaml"), data, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "manifest.yaml"), data, 0600))
 	_, err = LoadManifest(filepath.Join(dir, "manifest.yaml"), WithRoot(dir))
 	require.Error(t, err)
 }
