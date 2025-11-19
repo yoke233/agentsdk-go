@@ -34,6 +34,13 @@ func NewSandbox(workDir string) *Sandbox {
 	}
 }
 
+// AllowShellMetachars enables shell pipes and metacharacters (CLI mode).
+func (s *Sandbox) AllowShellMetachars(allow bool) {
+	if s != nil && s.validator != nil {
+		s.validator.AllowShellMetachars(allow)
+	}
+}
+
 // Allow registers additional absolute prefixes that commands may touch.
 func (s *Sandbox) Allow(path string) {
 	normalized := normalizePath(path)

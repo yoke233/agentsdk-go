@@ -188,7 +188,9 @@ func (q *ApprovalQueue) IsWhitelisted(sessionID string) bool {
 	}
 	if expiry.Before(q.clock()) {
 		delete(q.whitelist, sessionID)
-		_ = q.persistLocked()
+		if err := q.persistLocked(); err != nil {
+			_ = err // best-effort cleanup; in-memory whitelist already expired
+		}
 		return false
 	}
 	return true

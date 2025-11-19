@@ -163,10 +163,15 @@ func (t *SSETransport) dispatch(ctx context.Context, req *Request) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 512))
+		if err != nil {
+			return fmt.Errorf("rpc status %d (body read failed): %w", resp.StatusCode, err)
+		}
 		return fmt.Errorf("rpc status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
-	io.Copy(io.Discard, resp.Body)
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		return fmt.Errorf("drain rpc body: %w", err)
+	}
 	return nil
 }
 
@@ -214,7 +219,11 @@ func (t *SSETransport) consumeOnce() (bool, error) {
 		return false, fmt.Errorf("connect events: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 512))
+		if err != nil {
+			resp.Body.Close()
+			return false, fmt.Errorf("events status %d (body read failed): %w", resp.StatusCode, err)
+		}
 		resp.Body.Close()
 		return false, fmt.Errorf("events status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}

@@ -10,7 +10,7 @@ type JSONSchema struct {
 // ToolSchema defines the structure for tool definitions passed to LLM.
 // It follows the OpenAI/Anthropic tool schema format.
 type ToolSchema struct {
-	Type     string          `json:"type"`     // Always "function"
+	Type     string          `json:"type"` // Always "function"
 	Function *FunctionSchema `json:"function"`
 }
 
@@ -30,8 +30,8 @@ type ParameterSchema struct {
 
 // PropertySchema describes a single parameter property.
 type PropertySchema struct {
-	Type        string              `json:"type"`        // "string", "number", "boolean", "array", "object"
-	Description string              `json:"description"` // Human-readable description
-	Enum        []string            `json:"enum,omitempty"`
-	Items       *PropertySchema     `json:"items,omitempty"` // For array types
+	Type        string          `json:"type"`        // "string", "number", "boolean", "array", "object"
+	Description string          `json:"description"` // Human-readable description
+	Enum        []string        `json:"enum,omitempty"`
+	Items       *PropertySchema `json:"items,omitempty"` // For array types
 }

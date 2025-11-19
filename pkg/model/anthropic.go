@@ -217,6 +217,10 @@ func (m *anthropicModel) doWithRetry(ctx context.Context, fn func(context.Contex
 		if err == nil {
 			return nil
 		}
+		// Check context before deciding to retry
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if !isRetryable(err) || attempts >= m.maxRetries {
 			return err
 		}
@@ -241,7 +245,11 @@ func isRetryable(err error) bool {
 	}
 	var netErr net.Error
 	if errors.As(err, &netErr) {
-		return netErr.Timeout() || netErr.Temporary()
+		if netErr.Timeout() {
+			return true
+		}
+		//nolint:staticcheck // Temporary is deprecated but retained to treat non-timeout transient errors as retryable (tests rely on this behaviour).
+		return netErr.Temporary()
 	}
 	return false
 }
@@ -540,8 +548,8 @@ func usageFromFallback(final anthropicsdk.Usage, tracked Usage) Usage {
 const defaultAnthropicModel = anthropicsdk.ModelClaudeSonnet4_5_20250929
 
 var supportedAnthropicModels = []anthropicsdk.Model{
-	anthropicsdk.ModelClaude3_7SonnetLatest,
-	anthropicsdk.ModelClaude3_7Sonnet20250219,
+	anthropicsdk.ModelClaude3_7SonnetLatest,   //nolint:staticcheck // keep deprecated for backwards compatibility
+	anthropicsdk.ModelClaude3_7Sonnet20250219, //nolint:staticcheck // keep deprecated for backwards compatibility
 	anthropicsdk.ModelClaude3_5HaikuLatest,
 	anthropicsdk.ModelClaude3_5Haiku20241022,
 	anthropicsdk.ModelClaudeHaiku4_5,
@@ -555,8 +563,8 @@ var supportedAnthropicModels = []anthropicsdk.Model{
 	anthropicsdk.ModelClaudeOpus4_20250514,
 	anthropicsdk.ModelClaude4Opus20250514,
 	anthropicsdk.ModelClaudeOpus4_1_20250805,
-	anthropicsdk.ModelClaude3OpusLatest,
-	anthropicsdk.ModelClaude_3_Opus_20240229,
+	anthropicsdk.ModelClaude3OpusLatest,      //nolint:staticcheck // keep deprecated for backwards compatibility
+	anthropicsdk.ModelClaude_3_Opus_20240229, //nolint:staticcheck // keep deprecated for backwards compatibility
 	anthropicsdk.ModelClaude_3_Haiku_20240307,
 }
 

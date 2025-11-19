@@ -34,7 +34,7 @@ func TestPathResolverRejectsDangerousPaths(t *testing.T) {
 			setup: func(t *testing.T) string {
 				root := tempDirClean(t)
 				outside := filepath.Join(tempDirClean(t), "loot.txt")
-				if err := os.WriteFile(outside, []byte("loot"), 0o644); err != nil {
+				if err := os.WriteFile(outside, []byte("loot"), 0o600); err != nil {
 					t.Fatalf("write loot: %v", err)
 				}
 				deep := filepath.Join(root, "deep", "nested")
@@ -62,7 +62,9 @@ func TestPathResolverRejectsDangerousPaths(t *testing.T) {
 					t.Fatalf("chmod sealed: %v", err)
 				}
 				t.Cleanup(func() {
-					_ = os.Chmod(sealed, 0o755)
+					if err := os.Chmod(sealed, 0o755); err != nil {
+						t.Fatalf("restore perms: %v", err)
+					}
 				})
 				return filepath.Join(sealed, "payload.txt")
 			},
@@ -104,7 +106,7 @@ func TestPathResolverHandlesSafePaths(t *testing.T) {
 			setup: func(t *testing.T) string {
 				dir := tempDirClean(t)
 				original := filepath.Join(dir, "original.txt")
-				if err := os.WriteFile(original, []byte("data"), 0o644); err != nil {
+				if err := os.WriteFile(original, []byte("data"), 0o600); err != nil {
 					t.Fatalf("write original: %v", err)
 				}
 				hard := filepath.Join(dir, "hard.txt")

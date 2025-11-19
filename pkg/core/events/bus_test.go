@@ -93,6 +93,7 @@ func TestBusConcurrentSubscribeSafety(t *testing.T) {
 	defer bus.Close()
 	var consumed atomic.Int32
 	wg := sync.WaitGroup{}
+	errCh := make(chan error, 1)
 	for s := 0; s < 5; s++ {
 		wg.Add(1)
 		go func() {
@@ -104,11 +105,23 @@ func TestBusConcurrentSubscribeSafety(t *testing.T) {
 			})
 			defer unsub()
 			for i := 0; i < 20; i++ {
-				_ = bus.Publish(Event{Type: Notification})
+				if err := bus.Publish(Event{Type: Notification}); err != nil {
+					// Report the first publish error back to the main goroutine.
+					select {
+					case errCh <- err:
+					default:
+					}
+					return
+				}
 			}
 		}()
 	}
 	wg.Wait()
+	select {
+	case err := <-errCh:
+		t.Fatalf("publish notification: %v", err)
+	default:
+	}
 	time.Sleep(50 * time.Millisecond)
 	if consumed.Load() == 0 {
 		t.Fatalf("expected some notifications consumed")

@@ -96,7 +96,8 @@ func defaultRetryable(err error) bool {
 	}
 	var nerr net.Error
 	if errors.As(err, &nerr) {
-		return nerr.Timeout() || nerr.Temporary()
+		// Treat only timeouts as retryable; Temporary is deprecated and poorly defined.
+		return nerr.Timeout()
 	}
 	return false
 }

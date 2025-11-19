@@ -15,13 +15,13 @@ func TestSandboxValidatePath(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(inside), 0o755); err != nil {
 		t.Fatalf("mk inside: %v", err)
 	}
-	if err := os.WriteFile(inside, []byte("ok"), 0o644); err != nil {
+	if err := os.WriteFile(inside, []byte("ok"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 
 	outsideRoot := tempDirClean(t)
 	outside := filepath.Join(outsideRoot, "escape.txt")
-	if err := os.WriteFile(outside, []byte("nope"), 0o644); err != nil {
+	if err := os.WriteFile(outside, []byte("nope"), 0o600); err != nil {
 		t.Fatalf("write outside: %v", err)
 	}
 
@@ -71,7 +71,7 @@ func TestSandboxValidatePathScenarios(t *testing.T) {
 				if err := os.MkdirAll(filepath.Dir(safe), 0o755); err != nil {
 					t.Fatalf("mk safe: %v", err)
 				}
-				if err := os.WriteFile(safe, []byte("ok"), 0o644); err != nil {
+				if err := os.WriteFile(safe, []byte("ok"), 0o600); err != nil {
 					t.Fatalf("write safe: %v", err)
 				}
 				return NewSandbox(root), safe
@@ -84,7 +84,7 @@ func TestSandboxValidatePathScenarios(t *testing.T) {
 				root := tempDirClean(t)
 				outsideRoot := tempDirClean(t)
 				target := filepath.Join(outsideRoot, "escape.txt")
-				if err := os.WriteFile(target, []byte("blocked"), 0o644); err != nil {
+				if err := os.WriteFile(target, []byte("blocked"), 0o600); err != nil {
 					t.Fatalf("write outside: %v", err)
 				}
 				return NewSandbox(root), target
@@ -99,7 +99,7 @@ func TestSandboxValidatePathScenarios(t *testing.T) {
 				if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 					t.Fatalf("mk shared dir: %v", err)
 				}
-				if err := os.WriteFile(target, []byte("allowed"), 0o644); err != nil {
+				if err := os.WriteFile(target, []byte("allowed"), 0o600); err != nil {
 					t.Fatalf("write shared: %v", err)
 				}
 				sb := NewSandbox(root)
@@ -131,7 +131,9 @@ func TestSandboxValidatePathScenarios(t *testing.T) {
 					t.Fatalf("chdir root: %v", err)
 				}
 				t.Cleanup(func() {
-					_ = os.Chdir(orig)
+					if err := os.Chdir(orig); err != nil {
+						t.Fatalf("restore cwd: %v", err)
+					}
 				})
 				rel, err := filepath.Rel(root, safe)
 				if err != nil {

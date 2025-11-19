@@ -190,14 +190,18 @@ func (p *Packager) restoreEntry(dest string, header *tar.Header, r io.Reader) er
 	if !strings.HasPrefix(targetAbs, dest) {
 		return ErrUnsafeArchive
 	}
+	if header.Mode < 0 || header.Mode > 0o777 {
+		return fmt.Errorf("invalid file mode %o", header.Mode)
+	}
+	mode := fs.FileMode(header.Mode) //nolint:gosec // range-checked above to avoid overflow
 	switch header.Typeflag {
 	case tar.TypeDir:
-		return os.MkdirAll(targetAbs, fs.FileMode(header.Mode))
-	case tar.TypeReg, tar.TypeRegA:
+		return os.MkdirAll(targetAbs, mode)
+	case tar.TypeReg, tar.TypeRegA: //nolint:staticcheck // TypeRegA kept for backward compatibility with older archives
 		if err := os.MkdirAll(filepath.Dir(targetAbs), 0o755); err != nil {
 			return err
 		}
-		file, err := os.OpenFile(targetAbs, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, fs.FileMode(header.Mode))
+		file, err := os.OpenFile(targetAbs, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 		if err != nil {
 			return err
 		}

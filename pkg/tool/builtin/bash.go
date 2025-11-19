@@ -63,6 +63,13 @@ func NewBashToolWithRoot(root string) *BashTool {
 	}
 }
 
+// AllowShellMetachars enables shell pipes and metacharacters (CLI mode).
+func (b *BashTool) AllowShellMetachars(allow bool) {
+	if b != nil && b.sandbox != nil {
+		b.sandbox.AllowShellMetachars(allow)
+	}
+}
+
 func (b *BashTool) Name() string { return "bash_execute" }
 
 func (b *BashTool) Description() string {

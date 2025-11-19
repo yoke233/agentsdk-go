@@ -222,7 +222,9 @@ func convertMCPSchema(raw json.RawMessage) (*JSONSchema, error) {
 	if err := json.Unmarshal(raw, &generic); err != nil {
 		return nil, err
 	}
-	schema.Type, _ = generic["type"].(string)
+	if t, ok := generic["type"].(string); ok {
+		schema.Type = t
+	}
 	if props, ok := generic["properties"].(map[string]interface{}); ok {
 		schema.Properties = props
 	}

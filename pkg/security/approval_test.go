@@ -143,8 +143,14 @@ func TestApprovalQueueDenyFlow(t *testing.T) {
 
 func TestApprovalQueueListPendingAndClone(t *testing.T) {
 	q, _ := newTestQueue(t)
-	first, _ := q.Request("s1", "cmd1", nil)
-	second, _ := q.Request("s2", "cmd2", nil)
+	first, err := q.Request("s1", "cmd1", nil)
+	if err != nil {
+		t.Fatalf("request first: %v", err)
+	}
+	second, err := q.Request("s2", "cmd2", nil)
+	if err != nil {
+		t.Fatalf("request second: %v", err)
+	}
 	if _, err := q.Approve(second.ID, "ops", 0); err != nil {
 		t.Fatalf("approve second: %v", err)
 	}
@@ -248,7 +254,11 @@ func TestApprovalQueueLoadReadError(t *testing.T) {
 	if err := os.Chmod(store, 0o000); err != nil {
 		t.Skipf("chmod unsupported: %v", err)
 	}
-	defer os.Chmod(store, 0o600)
+	t.Cleanup(func() {
+		if err := os.Chmod(store, 0o600); err != nil {
+			t.Fatalf("restore perms: %v", err)
+		}
+	})
 
 	if _, err := NewApprovalQueue(store); err == nil || !strings.Contains(err.Error(), "load approvals") {
 		t.Fatalf("expected read error got %v", err)

@@ -171,7 +171,7 @@ func TestExecutorWithCustomBusAndClose(t *testing.T) {
 	exec := NewExecutor(WithBus(bus))
 	hook := newCountingHook(1)
 	exec.Register(hook)
-	if err := exec.Publish(events.Event{Type: events.Notification}); err != nil {
+	if err := exec.Publish(events.Event{Type: events.Notification, Payload: events.NotificationPayload{Message: "custom"}}); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
 	hook.wait(t, time.Second)
@@ -198,7 +198,7 @@ func TestExecutorHandlesPanicHooks(t *testing.T) {
 	}))
 	defer exec.Close()
 	exec.Register(panicHook{})
-	if err := exec.Publish(events.Event{Type: events.Notification}); err != nil {
+	if err := exec.Publish(events.Event{Type: events.Notification, Payload: events.NotificationPayload{Message: "panic"}}); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
 	select {

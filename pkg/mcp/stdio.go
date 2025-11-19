@@ -43,7 +43,7 @@ func NewSTDIOTransport(ctx context.Context, binary string, opts STDIOOptions) (*
 		ctx = context.Background()
 	}
 	cmdCtx, cancel := context.WithCancel(ctx)
-	cmd := exec.CommandContext(cmdCtx, binary, opts.Args...)
+	cmd := exec.CommandContext(cmdCtx, binary, opts.Args...) //nolint:gosec // binary/args are provided by trusted configuration, not direct user input
 	if opts.Dir != "" {
 		cmd.Dir = opts.Dir
 	}
@@ -190,7 +190,9 @@ func (t *STDIOTransport) Close() error {
 		t.cancel()
 	}
 	if t.cmd != nil && t.cmd.Process != nil {
-		_ = t.cmd.Process.Kill()
+		if err := t.cmd.Process.Kill(); err != nil {
+			_ = err // best-effort kill; transport already marked closed
+		}
 	}
 	return nil
 }

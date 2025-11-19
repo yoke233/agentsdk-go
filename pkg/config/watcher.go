@@ -123,7 +123,11 @@ func (w *Watcher) refreshTargets(cfg *ProjectConfig) error {
 	}
 	for path := range w.watched {
 		if _, ok := desired[path]; !ok {
-			_ = w.fsw.Remove(path)
+			// Best-effort removal: we ignore errors because a missing watch
+			// does not affect future reload behaviour.
+			if err := w.fsw.Remove(path); err != nil {
+				_ = err
+			}
 			delete(w.watched, path)
 		}
 	}

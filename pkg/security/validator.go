@@ -22,6 +22,8 @@ type Validator struct {
 	bannedFragments []string
 	maxCommandBytes int
 	maxArgs         int
+	// allowShellMeta permits |;&><`$ when true (for CLI scenarios)
+	allowShellMeta bool
 }
 
 // NewValidator initialises the validator with conservative defaults.
@@ -55,7 +57,15 @@ func NewValidator() *Validator {
 		},
 		maxCommandBytes: 4096,
 		maxArgs:         64,
+		allowShellMeta:  false,
 	}
+}
+
+// AllowShellMetachars enables pipe and other shell features (CLI mode).
+func (v *Validator) AllowShellMetachars(allow bool) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.allowShellMeta = allow
 }
 
 // Validate checks the provided command string.
@@ -73,7 +83,11 @@ func (v *Validator) Validate(input string) error {
 		return fmt.Errorf("security: control characters detected")
 	}
 
-	if strings.ContainsAny(cmd, "|;&><`$") {
+	v.mu.RLock()
+	allowMeta := v.allowShellMeta
+	v.mu.RUnlock()
+
+	if !allowMeta && strings.ContainsAny(cmd, "|;&><`$") {
 		return fmt.Errorf("security: pipe or shell metacharacters are blocked")
 	}
 

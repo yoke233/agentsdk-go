@@ -127,7 +127,11 @@ func (e *Executor) Bind() {
 }
 
 func (e *Executor) handlePreToolUse(ctx context.Context, evt events.Event) {
-	payload, _ := evt.Payload.(events.ToolUsePayload)
+	payload, ok := evt.Payload.(events.ToolUsePayload)
+	if !ok {
+		e.errFn(events.PreToolUse, fmt.Errorf("hooks: invalid payload for PreToolUse: %T", evt.Payload))
+		return
+	}
 	e.forEachHook(func(h any) {
 		if hook, ok := h.(PreToolUseHook); ok {
 			if err := safeCall(func() error { return hook.PreToolUse(ctx, payload) }); err != nil {
@@ -138,7 +142,11 @@ func (e *Executor) handlePreToolUse(ctx context.Context, evt events.Event) {
 }
 
 func (e *Executor) handlePostToolUse(ctx context.Context, evt events.Event) {
-	payload, _ := evt.Payload.(events.ToolResultPayload)
+	payload, ok := evt.Payload.(events.ToolResultPayload)
+	if !ok {
+		e.errFn(events.PostToolUse, fmt.Errorf("hooks: invalid payload for PostToolUse: %T", evt.Payload))
+		return
+	}
 	e.forEachHook(func(h any) {
 		if hook, ok := h.(PostToolUseHook); ok {
 			if err := safeCall(func() error { return hook.PostToolUse(ctx, payload) }); err != nil {
@@ -149,7 +157,11 @@ func (e *Executor) handlePostToolUse(ctx context.Context, evt events.Event) {
 }
 
 func (e *Executor) handleUserPrompt(ctx context.Context, evt events.Event) {
-	payload, _ := evt.Payload.(events.UserPromptPayload)
+	payload, ok := evt.Payload.(events.UserPromptPayload)
+	if !ok {
+		e.errFn(events.UserPromptSubmit, fmt.Errorf("hooks: invalid payload for UserPromptSubmit: %T", evt.Payload))
+		return
+	}
 	e.forEachHook(func(h any) {
 		if hook, ok := h.(UserPromptSubmitHook); ok {
 			if err := safeCall(func() error { return hook.UserPromptSubmit(ctx, payload) }); err != nil {
@@ -160,7 +172,11 @@ func (e *Executor) handleUserPrompt(ctx context.Context, evt events.Event) {
 }
 
 func (e *Executor) handleSessionStart(ctx context.Context, evt events.Event) {
-	payload, _ := evt.Payload.(events.SessionPayload)
+	payload, ok := evt.Payload.(events.SessionPayload)
+	if !ok {
+		e.errFn(events.SessionStart, fmt.Errorf("hooks: invalid payload for SessionStart: %T", evt.Payload))
+		return
+	}
 	e.forEachHook(func(h any) {
 		if hook, ok := h.(SessionStartHook); ok {
 			if err := safeCall(func() error { return hook.SessionStart(ctx, payload) }); err != nil {
@@ -171,7 +187,11 @@ func (e *Executor) handleSessionStart(ctx context.Context, evt events.Event) {
 }
 
 func (e *Executor) handleStop(ctx context.Context, evt events.Event) {
-	payload, _ := evt.Payload.(events.StopPayload)
+	payload, ok := evt.Payload.(events.StopPayload)
+	if !ok {
+		e.errFn(events.Stop, fmt.Errorf("hooks: invalid payload for Stop: %T", evt.Payload))
+		return
+	}
 	e.forEachHook(func(h any) {
 		if hook, ok := h.(StopHook); ok {
 			if err := safeCall(func() error { return hook.Stop(ctx, payload) }); err != nil {
@@ -182,7 +202,11 @@ func (e *Executor) handleStop(ctx context.Context, evt events.Event) {
 }
 
 func (e *Executor) handleSubagentStop(ctx context.Context, evt events.Event) {
-	payload, _ := evt.Payload.(events.SubagentStopPayload)
+	payload, ok := evt.Payload.(events.SubagentStopPayload)
+	if !ok {
+		e.errFn(events.SubagentStop, fmt.Errorf("hooks: invalid payload for SubagentStop: %T", evt.Payload))
+		return
+	}
 	e.forEachHook(func(h any) {
 		if hook, ok := h.(SubagentStopHook); ok {
 			if err := safeCall(func() error { return hook.SubagentStop(ctx, payload) }); err != nil {
@@ -193,7 +217,11 @@ func (e *Executor) handleSubagentStop(ctx context.Context, evt events.Event) {
 }
 
 func (e *Executor) handleNotification(ctx context.Context, evt events.Event) {
-	payload, _ := evt.Payload.(events.NotificationPayload)
+	payload, ok := evt.Payload.(events.NotificationPayload)
+	if !ok {
+		e.errFn(events.Notification, fmt.Errorf("hooks: invalid payload for Notification: %T", evt.Payload))
+		return
+	}
 	e.forEachHook(func(h any) {
 		if hook, ok := h.(NotificationHook); ok {
 			if err := safeCall(func() error { return hook.Notification(ctx, payload) }); err != nil {

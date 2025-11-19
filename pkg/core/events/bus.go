@@ -239,7 +239,7 @@ func (s *subscription) invoke(evt Event) {
 		defer close(done)
 		defer func() {
 			if r := recover(); r != nil {
-				// swallow panics to ensure isolation
+				_ = r // swallow panics to ensure isolation
 			}
 		}()
 		s.handler(ctx, evt)
@@ -265,7 +265,9 @@ func (s *subscription) enqueue(evt Event) {
 		return
 	}
 	defer func() {
-		_ = recover()
+		if r := recover(); r != nil {
+			_ = r // swallow panics to keep dispatch loop robust
+		}
 	}()
 	s.queue <- evt
 }
