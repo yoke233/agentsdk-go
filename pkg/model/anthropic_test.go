@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"os"
+	"reflect"
 	"testing"
 	"time"
 
@@ -230,7 +232,7 @@ func TestStreamDeltasAndToolUse(t *testing.T) {
 }
 
 func TestProviderEnvFallbackAndCache(t *testing.T) {
-	t.Setenv("ANTHROPIC_API_KEY", "env-key")
+	setEnv(t, "ANTHROPIC_API_KEY", "env-key")
 	p := &AnthropicProvider{CacheTTL: time.Minute}
 	first, err := p.Model(context.Background())
 	if err != nil {
@@ -246,7 +248,7 @@ func TestProviderEnvFallbackAndCache(t *testing.T) {
 }
 
 func TestProviderMissingAPIKey(t *testing.T) {
-	t.Setenv("ANTHROPIC_API_KEY", "")
+	setEnv(t, "ANTHROPIC_API_KEY", "")
 	p := &AnthropicProvider{}
 	if _, err := p.Model(context.Background()); err == nil {
 		t.Fatalf("expected error when api key is missing")
@@ -460,6 +462,37 @@ func TestNewAnthropicBranches(t *testing.T) {
 	}
 }
 
+func TestSessionIDMetadataPropagation(t *testing.T) {
+	m := &anthropicModel{
+		model:     anthropicsdk.ModelClaude3_7SonnetLatest, //nolint:staticcheck // use deprecated constant for compatibility coverage
+		maxTokens: 16,
+	}
+
+	req := Request{
+		SessionID: " session-123 ",
+		Messages:  []Message{{Role: "user", Content: "hi"}},
+	}
+
+	params, err := m.buildParams(req)
+	if err != nil {
+		t.Fatalf("buildParams returned error: %v", err)
+	}
+	if !params.Metadata.UserID.Valid() {
+		t.Fatal("metadata user id missing")
+	}
+	if got := params.Metadata.UserID.Value; got != "session-123" {
+		t.Fatalf("user id mismatch: %q", got)
+	}
+
+	noSessionParams, err := m.buildParams(Request{Messages: []Message{{Role: "user", Content: "ping"}}})
+	if err != nil {
+		t.Fatalf("buildParams returned error for empty session: %v", err)
+	}
+	if noSessionParams.Metadata.UserID.Valid() {
+		t.Fatal("metadata should be omitted when no session id")
+	}
+}
+
 func TestProviderFuncNil(t *testing.T) {
 	var fn ProviderFunc
 	if _, err := fn.Model(context.Background()); err == nil {
@@ -473,6 +506,245 @@ func TestExtractToolCallNil(t *testing.T) {
 	}
 }
 
+func TestCustomHeadersDisabled(t *testing.T) {
+	setEnv(t, "ANTHROPIC_CUSTOM_HEADERS_ENABLED", "false")
+	setEnv(t, "ANTHROPIC_API_KEY", "env-key")
+	defaults := map[string]string{"User-Agent": "custom-client"}
+	overrides := map[string]string{"X-App": "user-app"}
+	if anthropicCustomHeadersEnabled() {
+		t.Fatal("custom headers gate should be disabled")
+	}
+	headers := newAnthropicHeaders(defaults, overrides)
+	if headers == nil {
+		t.Fatal("expected headers when defaults provided")
+	}
+	if _, ok := headers["accept"]; ok {
+		t.Fatal("predefined headers should be skipped when gate is off")
+	}
+	if headers["user-agent"] != "custom-client" {
+		t.Fatalf("defaults not applied: %+v", headers)
+	}
+	if headers["x-app"] != "user-app" {
+		t.Fatalf("user override missing, got %+v", headers)
+	}
+	if headers["x-api-key"] != "env-key" {
+		t.Fatalf("x-api-key mismatch: %q", headers["x-api-key"])
+	}
+}
+
+func TestCustomHeadersEnabled(t *testing.T) {
+	setEnv(t, "ANTHROPIC_CUSTOM_HEADERS_ENABLED", " TrUe ")
+	setEnv(t, "ANTHROPIC_API_KEY", "env-two")
+	if !anthropicCustomHeadersEnabled() {
+		t.Fatal("custom headers gate should be enabled")
+	}
+	headers := newAnthropicHeaders(nil, nil)
+	if headers == nil {
+		t.Fatal("expected predefined headers when gate is on")
+	}
+	if got, want := len(headers), len(anthropicPredefinedHeaders)+1; got != want {
+		t.Fatalf("header count mismatch: got %d want %d", got, want)
+	}
+	for key, value := range anthropicPredefinedHeaders {
+		if headers[key] != value {
+			t.Fatalf("predefined header %s mismatch: %q", key, headers[key])
+		}
+	}
+	if headers["x-api-key"] != "env-two" {
+		t.Fatalf("expected env api key, got %q", headers["x-api-key"])
+	}
+}
+
+func TestCustomHeadersMergePriority(t *testing.T) {
+	setEnv(t, "ANTHROPIC_CUSTOM_HEADERS_ENABLED", "true")
+	setEnv(t, "ANTHROPIC_API_KEY", "priority-key")
+	defaults := map[string]string{"Content-Type": "text/plain", "User-Agent": "ua-default", "X-App": "default-app"}
+	overrides := map[string]string{"CONTENT-TYPE": "user-type", "X-App": "user-app", "extra": "1"}
+	headers := newAnthropicHeaders(defaults, overrides)
+	if headers["content-type"] != "user-type" {
+		t.Fatalf("user header should win: %+v", headers)
+	}
+	if headers["user-agent"] != "ua-default" {
+		t.Fatalf("defaults should override predefined: %+v", headers)
+	}
+	if headers["x-app"] != "user-app" {
+		t.Fatalf("user override missing: %+v", headers)
+	}
+	if headers["extra"] != "1" {
+		t.Fatalf("user extra header missing: %+v", headers)
+	}
+	if headers["anthropic-version"] != anthropicPredefinedHeaders["anthropic-version"] {
+		t.Fatalf("predefined headers should remain: %+v", headers)
+	}
+}
+
+func TestCustomHeadersAPIKeySource(t *testing.T) {
+	setEnv(t, "ANTHROPIC_CUSTOM_HEADERS_ENABLED", "true")
+	setEnv(t, "ANTHROPIC_API_KEY", "real-key")
+	overrides := map[string]string{"X-API-Key": "user"}
+	headers := newAnthropicHeaders(nil, overrides)
+	if headers["x-api-key"] != "real-key" {
+		t.Fatalf("expected env key, got %+v", headers)
+	}
+	if err := os.Setenv("ANTHROPIC_API_KEY", ""); err != nil {
+		t.Fatalf("set env: %v", err)
+	}
+	headers = newAnthropicHeaders(map[string]string{"Accept": "application/json"}, overrides)
+	if _, ok := headers["x-api-key"]; ok {
+		t.Fatalf("x-api-key should be absent when env missing: %+v", headers)
+	}
+	if err := os.Unsetenv("ANTHROPIC_CUSTOM_HEADERS_ENABLED"); err != nil {
+		t.Fatalf("unset env: %v", err)
+	}
+	if err := os.Unsetenv("ANTHROPIC_API_KEY"); err != nil {
+		t.Fatalf("unset env: %v", err)
+	}
+	headers = newAnthropicHeaders(nil, nil)
+	if headers != nil {
+		t.Fatalf("expected nil headers when nothing to merge, got %+v", headers)
+	}
+}
+
+func TestCustomHeadersUserOverridePredefined(t *testing.T) {
+	setEnv(t, "ANTHROPIC_CUSTOM_HEADERS_ENABLED", "true")
+	setEnv(t, "ANTHROPIC_API_KEY", "override-key")
+	overrides := map[string]string{"X-App": "user-app", "Anthropic-Version": "2099-01-01"}
+	headers := newAnthropicHeaders(nil, overrides)
+	if headers["x-app"] != "user-app" {
+		t.Fatalf("expected user x-app, got %+v", headers)
+	}
+	if headers["anthropic-version"] != "2099-01-01" {
+		t.Fatalf("expected overridden anthropic-version: %+v", headers)
+	}
+	if headers["x-api-key"] != "override-key" {
+		t.Fatalf("env api key should remain authoritative: %+v", headers)
+	}
+	if headers["accept"] != anthropicPredefinedHeaders["accept"] {
+		t.Fatalf("unrelated predefined headers should remain: %+v", headers)
+	}
+}
+
+func TestCustomHeadersCompleteAppliesHeaders(t *testing.T) {
+	setEnv(t, "ANTHROPIC_CUSTOM_HEADERS_ENABLED", "true")
+	setEnv(t, "ANTHROPIC_API_KEY", "complete-key")
+	mock := &fakeMessages{
+		newFn: func(context.Context, anthropicsdk.MessageNewParams) (*anthropicsdk.Message, error) {
+			msg := anthropicsdk.Message{
+				Role:    constant.Assistant("assistant"),
+				Content: []anthropicsdk.ContentBlockUnion{{Type: "text", Text: "ok"}},
+			}
+			return &msg, nil
+		},
+	}
+	m := &anthropicModel{
+		msgs:       mock,
+		model:      anthropicsdk.ModelClaude3_7SonnetLatest, //nolint:staticcheck // compat coverage
+		maxTokens:  32,
+		maxRetries: 0,
+	}
+	if _, err := m.Complete(context.Background(), Request{Messages: []Message{{Role: "user", Content: "ping"}}}); err != nil {
+		t.Fatalf("complete failed: %v", err)
+	}
+	assertHeadersApplied(t, mock.newOpts, "complete-key")
+}
+
+func TestCustomHeadersCompleteStreamAppliesHeaders(t *testing.T) {
+	setEnv(t, "ANTHROPIC_CUSTOM_HEADERS_ENABLED", "true")
+	setEnv(t, "ANTHROPIC_API_KEY", "stream-key")
+	decoder := &sequenceDecoder{}
+	stream := ssestream.NewStream[anthropicsdk.MessageStreamEventUnion](decoder, nil)
+	mock := &fakeMessages{
+		streamFn: func(context.Context, anthropicsdk.MessageNewParams) *ssestream.Stream[anthropicsdk.MessageStreamEventUnion] {
+			return stream
+		},
+	}
+	m := &anthropicModel{
+		msgs:       mock,
+		model:      anthropicsdk.ModelClaude3_7SonnetLatest, //nolint:staticcheck // compat coverage
+		maxTokens:  32,
+		maxRetries: 0,
+	}
+	if err := m.CompleteStream(context.Background(), Request{Messages: []Message{{Role: "user", Content: "hi"}}}, func(StreamResult) error { return nil }); err != nil {
+		t.Fatalf("stream failed: %v", err)
+	}
+	assertHeadersApplied(t, mock.streamOpts, "stream-key")
+}
+
+func setEnv(t *testing.T, key, value string) {
+	t.Helper()
+	original, had := os.LookupEnv(key)
+	if err := os.Setenv(key, value); err != nil {
+		t.Fatalf("set env %s: %v", key, err)
+	}
+	t.Cleanup(func() {
+		var err error
+		if had {
+			err = os.Setenv(key, original)
+		} else {
+			err = os.Unsetenv(key)
+		}
+		if err != nil {
+			t.Fatalf("restore env %s: %v", key, err)
+		}
+	})
+}
+
+func assertHeadersApplied(t *testing.T, opts []option.RequestOption, apiKey string) {
+	t.Helper()
+	if len(opts) == 0 {
+		t.Fatal("expected request options to include headers")
+	}
+	headers := headersFromOptions(t, opts)
+	if got, want := len(headers), len(anthropicPredefinedHeaders)+1; got != want {
+		t.Fatalf("header count mismatch: got %d want %d", got, want)
+	}
+	for key, value := range anthropicPredefinedHeaders {
+		if headers.Get(key) != value {
+			t.Fatalf("header %s mismatch: got %q want %q", key, headers.Get(key), value)
+		}
+	}
+	if got := headers.Get("x-api-key"); got != apiKey {
+		t.Fatalf("x-api-key mismatch: got %q want %q", got, apiKey)
+	}
+}
+
+func headersFromOptions(t *testing.T, opts []option.RequestOption) http.Header {
+	t.Helper()
+	headers := http.Header{}
+	if len(opts) == 0 {
+		return headers
+	}
+	var cfg reflect.Value
+	for _, opt := range opts {
+		if opt == nil {
+			continue
+		}
+		apply := reflect.ValueOf(opt).MethodByName("Apply")
+		if !apply.IsValid() {
+			t.Fatalf("request option missing Apply: %T", opt)
+		}
+		if apply.Type().NumIn() != 1 {
+			t.Fatalf("unexpected request option signature: %T", opt)
+		}
+		if !cfg.IsValid() {
+			argType := apply.Type().In(0)
+			cfg = reflect.New(argType.Elem())
+			field := cfg.Elem().FieldByName("Request")
+			if !field.IsValid() {
+				t.Fatal("request config missing Request field")
+			}
+			field.Set(reflect.ValueOf(&http.Request{Header: headers}))
+		}
+		out := apply.Call([]reflect.Value{cfg})
+		if len(out) == 1 && !out[0].IsNil() {
+			if err, ok := out[0].Interface().(error); ok && err != nil {
+				t.Fatalf("apply option failed: %v", err)
+			}
+		}
+	}
+	return headers
+}
+
 type noopModel struct{}
 
 func (noopModel) Complete(context.Context, Request) (*Response, error) { return &Response{}, nil }
@@ -483,26 +755,32 @@ func (noopModel) CompleteStream(context.Context, Request, StreamHandler) error {
 // --- helpers ---
 
 type fakeMessages struct {
-	newFn    func(context.Context, anthropicsdk.MessageNewParams) (*anthropicsdk.Message, error)
-	streamFn func(context.Context, anthropicsdk.MessageNewParams) *ssestream.Stream[anthropicsdk.MessageStreamEventUnion]
-	countFn  func(context.Context, anthropicsdk.MessageCountTokensParams) (*anthropicsdk.MessageTokensCount, error)
+	newFn      func(context.Context, anthropicsdk.MessageNewParams) (*anthropicsdk.Message, error)
+	streamFn   func(context.Context, anthropicsdk.MessageNewParams) *ssestream.Stream[anthropicsdk.MessageStreamEventUnion]
+	countFn    func(context.Context, anthropicsdk.MessageCountTokensParams) (*anthropicsdk.MessageTokensCount, error)
+	newOpts    []option.RequestOption
+	streamOpts []option.RequestOption
+	countOpts  []option.RequestOption
 }
 
-func (f *fakeMessages) New(ctx context.Context, params anthropicsdk.MessageNewParams, _ ...option.RequestOption) (*anthropicsdk.Message, error) {
+func (f *fakeMessages) New(ctx context.Context, params anthropicsdk.MessageNewParams, opts ...option.RequestOption) (*anthropicsdk.Message, error) {
+	f.newOpts = append([]option.RequestOption(nil), opts...)
 	if f.newFn == nil {
 		return nil, errors.New("newFn not set")
 	}
 	return f.newFn(ctx, params)
 }
 
-func (f *fakeMessages) NewStreaming(ctx context.Context, params anthropicsdk.MessageNewParams, _ ...option.RequestOption) *ssestream.Stream[anthropicsdk.MessageStreamEventUnion] {
+func (f *fakeMessages) NewStreaming(ctx context.Context, params anthropicsdk.MessageNewParams, opts ...option.RequestOption) *ssestream.Stream[anthropicsdk.MessageStreamEventUnion] {
+	f.streamOpts = append([]option.RequestOption(nil), opts...)
 	if f.streamFn == nil {
 		return nil
 	}
 	return f.streamFn(ctx, params)
 }
 
-func (f *fakeMessages) CountTokens(ctx context.Context, params anthropicsdk.MessageCountTokensParams, _ ...option.RequestOption) (*anthropicsdk.MessageTokensCount, error) {
+func (f *fakeMessages) CountTokens(ctx context.Context, params anthropicsdk.MessageCountTokensParams, opts ...option.RequestOption) (*anthropicsdk.MessageTokensCount, error) {
+	f.countOpts = append([]option.RequestOption(nil), opts...)
 	if f.countFn == nil {
 		return &anthropicsdk.MessageTokensCount{}, nil
 	}

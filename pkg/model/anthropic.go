@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -41,6 +42,73 @@ type anthropicModel struct {
 	maxRetries  int
 	system      string
 	temperature *float64
+}
+
+var anthropicPredefinedHeaders = map[string]string{
+	"accept":         "application/json",
+	"anthropic-beta": "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14",
+	"anthropic-dangerous-direct-browser-access": "true",
+	"anthropic-version":                         "2023-06-01",
+	"content-type":                              "application/json",
+	"user-agent":                                "claude-cli/2.0.34 (external, cli)",
+	"x-app":                                     "cli",
+	"x-stainless-arch":                          "arm64",
+	"x-stainless-helper-method":                 "stream",
+	"x-stainless-lang":                          "js",
+	"x-stainless-os":                            "MacOS",
+	"x-stainless-package-version":               "0.68.0",
+	"x-stainless-retry-count":                   "0",
+	"x-stainless-runtime":                       "node",
+	"x-stainless-runtime-version":               "v22.20.0",
+	"x-stainless-timeout":                       "600",
+}
+
+func anthropicCustomHeadersEnabled() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("ANTHROPIC_CUSTOM_HEADERS_ENABLED")), "true")
+}
+
+func newAnthropicHeaders(defaults, overrides map[string]string) map[string]string {
+	merge := func(dst map[string]string, src map[string]string) {
+		for k, v := range src {
+			norm := strings.ToLower(strings.TrimSpace(k))
+			if norm == "" || norm == "x-api-key" {
+				continue
+			}
+			dst[norm] = v
+		}
+	}
+
+	merged := make(map[string]string)
+	if anthropicCustomHeadersEnabled() {
+		merge(merged, anthropicPredefinedHeaders)
+	}
+	merge(merged, defaults)
+	merge(merged, overrides)
+
+	if apiKey := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")); apiKey != "" {
+		merged["x-api-key"] = apiKey
+	} else {
+		delete(merged, "x-api-key")
+	}
+	if len(merged) == 0 {
+		return nil
+	}
+	return merged
+}
+
+func (m *anthropicModel) requestOptions() []option.RequestOption {
+	headers := newAnthropicHeaders(nil, nil)
+	if len(headers) == 0 {
+		return nil
+	}
+	opts := make([]option.RequestOption, 0, len(headers))
+	for key, value := range headers {
+		if value == "" {
+			continue
+		}
+		opts = append(opts, option.WithHeader(key, value))
+	}
+	return opts
 }
 
 // NewAnthropic constructs a production-ready Anthropic-backed Model.
@@ -79,14 +147,16 @@ func NewAnthropic(cfg AnthropicConfig) (Model, error) {
 
 // Complete issues a non-streaming completion.
 func (m *anthropicModel) Complete(ctx context.Context, req Request) (*Response, error) {
+	recordModelRequest(ctx, req)
 	var resp *Response
+	headerOpts := m.requestOptions()
 	err := m.doWithRetry(ctx, func(ctx context.Context) error {
 		params, err := m.buildParams(req)
 		if err != nil {
 			return err
 		}
 
-		msg, err := m.msgs.New(ctx, params)
+		msg, err := m.msgs.New(ctx, params, headerOpts...)
 		if err != nil {
 			return err
 		}
@@ -97,6 +167,7 @@ func (m *anthropicModel) Complete(ctx context.Context, req Request) (*Response, 
 			Usage:      usage,
 			StopReason: string(msg.StopReason),
 		}
+		recordModelResponse(ctx, resp)
 		return nil
 	})
 	return resp, err
@@ -108,6 +179,9 @@ func (m *anthropicModel) CompleteStream(ctx context.Context, req Request, cb Str
 		return errors.New("stream callback required")
 	}
 
+	recordModelRequest(ctx, req)
+
+	headerOpts := m.requestOptions()
 	return m.doWithRetry(ctx, func(ctx context.Context) error {
 		params, err := m.buildParams(req)
 		if err != nil {
@@ -121,7 +195,7 @@ func (m *anthropicModel) CompleteStream(ctx context.Context, req Request, cb Str
 			usage.TotalTokens = usage.InputTokens
 		}
 
-		stream := m.msgs.NewStreaming(ctx, params)
+		stream := m.msgs.NewStreaming(ctx, params, headerOpts...)
 		if stream == nil {
 			return errors.New("anthropic stream not available")
 		}
@@ -167,6 +241,7 @@ func (m *anthropicModel) CompleteStream(ctx context.Context, req Request, cb Str
 			Usage:      usageFromFallback(final.Usage, usage),
 			StopReason: string(final.StopReason),
 		}
+		recordModelResponse(ctx, resp)
 		return cb(StreamResult{Final: true, Response: resp})
 	})
 }
@@ -205,6 +280,12 @@ func (m *anthropicModel) buildParams(req Request) (anthropicsdk.MessageNewParams
 	}
 	if req.Temperature != nil {
 		params.Temperature = param.NewOpt(*req.Temperature)
+	}
+
+	if sessionID := strings.TrimSpace(req.SessionID); sessionID != "" {
+		params.Metadata = anthropicsdk.MetadataParam{
+			UserID: param.NewOpt(sessionID),
+		}
 	}
 
 	return params, nil
@@ -495,6 +576,9 @@ func decodeJSON(raw json.RawMessage) map[string]any {
 	var v any
 	if err := json.Unmarshal(raw, &v); err != nil {
 		return map[string]any{"raw": string(raw)}
+	}
+	if v == nil {
+		return nil
 	}
 	if m, ok := v.(map[string]any); ok {
 		return m

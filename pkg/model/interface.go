@@ -30,6 +30,7 @@ type Request struct {
 	Tools       []ToolDefinition
 	System      string
 	Model       string
+	SessionID   string
 	MaxTokens   int
 	Temperature *float64
 }
