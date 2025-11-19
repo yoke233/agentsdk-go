@@ -123,7 +123,7 @@ func TestSandboxValidatePathScenarios(t *testing.T) {
 				if err := os.MkdirAll(filepath.Dir(safe), 0o755); err != nil {
 					t.Fatalf("mk rel dir: %v", err)
 				}
-				if err := os.WriteFile(safe, []byte("rel"), 0o644); err != nil {
+				if err := os.WriteFile(safe, []byte("rel"), 0o600); err != nil {
 					t.Fatalf("write rel: %v", err)
 				}
 				orig := mustGetwd(t)
@@ -155,7 +155,7 @@ func TestSandboxValidatePathScenarios(t *testing.T) {
 				if err := os.MkdirAll(filepath.Dir(sibling), 0o755); err != nil {
 					t.Fatalf("mk sibling dir: %v", err)
 				}
-				if err := os.WriteFile(sibling, []byte("blocked"), 0o644); err != nil {
+				if err := os.WriteFile(sibling, []byte("blocked"), 0o600); err != nil {
 					t.Fatalf("write sibling: %v", err)
 				}
 				return NewSandbox(work), sibling
@@ -201,7 +201,7 @@ func TestSandboxRejectsSymlinkEscape(t *testing.T) {
 			makePath: func(t *testing.T, root string) string {
 				t.Helper()
 				target := filepath.Join(t.TempDir(), "target.txt")
-				if err := os.WriteFile(target, []byte("outside"), 0o644); err != nil {
+				if err := os.WriteFile(target, []byte("outside"), 0o600); err != nil {
 					t.Fatalf("write target: %v", err)
 				}
 				symlink := filepath.Join(root, "link.txt")
@@ -215,7 +215,7 @@ func TestSandboxRejectsSymlinkEscape(t *testing.T) {
 			makePath: func(t *testing.T, root string) string {
 				t.Helper()
 				outside := filepath.Join(t.TempDir(), "target.txt")
-				if err := os.WriteFile(outside, []byte("outside"), 0o644); err != nil {
+				if err := os.WriteFile(outside, []byte("outside"), 0o600); err != nil {
 					t.Fatalf("write target: %v", err)
 				}
 				link2 := filepath.Join(root, "link-2")
