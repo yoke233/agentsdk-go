@@ -5,7 +5,9 @@
       "Bash(uv run:*)",
       "Bash(git add:*)",
       "Bash(git rm:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(go test:*)",
+      "Bash(go tool cover:*)"
     ],
     "deny": [],
     "ask": []
