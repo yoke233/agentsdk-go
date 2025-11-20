@@ -3,8 +3,11 @@ package middleware
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -187,5 +190,87 @@ func TestMiddlewareNameVariants(t *testing.T) {
 
 	if got := middlewareName(emptyName{}); got != "<unnamed>" {
 		t.Fatalf("unexpected unnamed fallback: %s", got)
+	}
+}
+
+func TestChainStatePropagation(t *testing.T) {
+	chain := NewChain([]Middleware{
+		Funcs{
+			Identifier: "seed",
+			OnBeforeTool: func(_ context.Context, st *State) error {
+				st.SetValue("step", "seeded")
+				st.ToolCall = "call-1"
+				return nil
+			},
+		},
+		Funcs{
+			Identifier: "observer",
+			OnBeforeTool: func(_ context.Context, st *State) error {
+				if st.Values["step"] != "seeded" {
+					return fmt.Errorf("state not forwarded: %#v", st.Values)
+				}
+				if st.ToolCall != "call-1" {
+					return fmt.Errorf("tool call lost: %v", st.ToolCall)
+				}
+				st.SetValue("step", "observed")
+				return nil
+			},
+		},
+	})
+	st := &State{}
+	if err := chain.Execute(context.Background(), StageBeforeTool, st); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if st.Values["step"] != "observed" {
+		t.Fatalf("state not mutated by chain: %#v", st.Values)
+	}
+}
+
+func TestChainWithoutMiddlewareIsNoop(t *testing.T) {
+	chain := NewChain(nil)
+	if err := chain.Execute(context.Background(), StageAfterAgent, &State{}); err != nil {
+		t.Fatalf("unexpected error on empty chain: %v", err)
+	}
+}
+
+func TestChainUnknownStage(t *testing.T) {
+	chain := NewChain([]Middleware{Funcs{Identifier: "demo"}})
+	err := chain.Execute(context.Background(), Stage(99), &State{})
+	if err == nil || !strings.Contains(err.Error(), "unknown stage") {
+		t.Fatalf("expected unknown stage error, got %v", err)
+	}
+}
+
+func TestChainConcurrentUseAndExecute(t *testing.T) {
+	var executed atomic.Int32
+	chain := NewChain(nil)
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	mwCount := 8
+	wg.Add(mwCount)
+
+	for i := 0; i < mwCount; i++ {
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			chain.Use(Funcs{
+				Identifier: fmt.Sprintf("mw-%d", i),
+				OnAfterAgent: func(context.Context, *State) error {
+					executed.Add(1)
+					return nil
+				},
+			})
+		}(i)
+	}
+
+	close(start)
+	wg.Wait()
+
+	if err := chain.Execute(context.Background(), StageAfterAgent, &State{}); err != nil {
+		t.Fatalf("execute after concurrent use: %v", err)
+	}
+	if got := executed.Load(); got != int32(mwCount) {
+		t.Fatalf("expected %d middleware executions, got %d", mwCount, got)
 	}
 }

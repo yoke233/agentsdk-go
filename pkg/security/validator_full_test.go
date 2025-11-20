@@ -1,6 +1,7 @@
 package security
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -135,5 +136,113 @@ func TestSplitCommandDetectsEdgeErrors(t *testing.T) {
 	}
 	if _, err := splitCommand(`echo "missing end`); err == nil || !strings.Contains(err.Error(), "unterminated quote") {
 		t.Fatalf("expected quote error got %v", err)
+	}
+}
+
+func TestValidatorAllowsMetacharsWhenEnabled(t *testing.T) {
+	v := NewValidator()
+	cmd := "echo ok | grep ok"
+
+	if err := v.Validate(cmd); err == nil || !strings.Contains(err.Error(), "metacharacters") {
+		t.Fatalf("expected metacharacters to be blocked, got %v", err)
+	}
+
+	v.AllowShellMetachars(true)
+	if err := v.Validate(cmd); err != nil {
+		t.Fatalf("metacharacters should be allowed after toggle: %v", err)
+	}
+}
+
+func TestSandboxForwardsAllowShellMetachars(t *testing.T) {
+	sb := NewSandbox(t.TempDir())
+	cmd := "echo ok | grep ok"
+
+	if err := sb.ValidateCommand(cmd); err == nil || !strings.Contains(err.Error(), "metacharacters") {
+		t.Fatalf("sandbox should block metacharacters by default, got %v", err)
+	}
+
+	sb.AllowShellMetachars(true)
+	if err := sb.ValidateCommand(cmd); err != nil {
+		t.Fatalf("sandbox should allow metacharacters when enabled: %v", err)
+	}
+
+	if err := sb.ValidateCommand("rm -rf /"); err == nil || !strings.Contains(err.Error(), "fragment") {
+		t.Fatalf("banned fragments must still be enforced, got %v", err)
+	}
+}
+
+func TestValidatorBannedFragmentsExhaustive(t *testing.T) {
+	t.Parallel()
+	v := NewValidator()
+	cases := []string{
+		"rm -rf /",
+		"echo --no-preserve-root",
+		"echo --preserve-root=false",
+		"rm -fr /tmp",
+		"rm -r /tmp",
+		"rm --recursive /tmp",
+		"rmdir -p /tmp",
+		"rm *",
+		"rm /",
+	}
+
+	for _, cmd := range cases {
+		cmd := cmd
+		t.Run(cmd, func(t *testing.T) {
+			t.Helper()
+			if err := v.Validate(cmd); err == nil || !strings.Contains(err.Error(), "fragment") {
+				t.Fatalf("expected fragment error for %q, got %v", cmd, err)
+			}
+		})
+	}
+}
+
+func TestValidatorBannedCommandsExhaustive(t *testing.T) {
+	t.Parallel()
+	v := NewValidator()
+	commands := []string{
+		"dd if=/dev/zero of=/dev/null",
+		"mkfs /dev/sda",
+		"fdisk -l",
+		"parted --list",
+		"format disk",
+		"mkfs.ext4 /dev/sdb1",
+		"shutdown now",
+		"reboot",
+		"halt",
+		"poweroff",
+		"mount /dev/sda1 /mnt",
+		"sudo ls",
+	}
+
+	for _, cmd := range commands {
+		cmd := cmd
+		t.Run(cmd, func(t *testing.T) {
+			t.Helper()
+			if err := v.Validate(cmd); err == nil || !strings.Contains(err.Error(), strings.Fields(cmd)[0]) {
+				t.Fatalf("expected banned command error for %q, got %v", cmd, err)
+			}
+		})
+	}
+}
+
+func TestValidatorTreatsEmptyQuotedCommandAsEmpty(t *testing.T) {
+	v := NewValidator()
+
+	err := v.Validate(`""`)
+	if !errors.Is(err, ErrEmptyCommand) {
+		t.Fatalf("expected empty command error, got %v", err)
+	}
+}
+
+func TestSplitCommandBackslashInsideSingleQuotes(t *testing.T) {
+	cmd := "echo 'path\\to'"
+	args, err := splitCommand(cmd)
+	if err != nil {
+		t.Fatalf("splitCommand: %v", err)
+	}
+	want := []string{"echo", "path\\to"}
+	if !reflect.DeepEqual(args, want) {
+		t.Fatalf("unexpected args: %#v", args)
 	}
 }

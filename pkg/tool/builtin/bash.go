@@ -20,7 +20,7 @@ import (
 const (
 	defaultBashTimeout = 30 * time.Second
 	maxBashTimeout     = 2 * time.Minute
-	bashDescript = `
+	bashDescript       = `
 	# Bash Tool Documentation
 
 	Executes bash commands in a persistent shell session with optional timeout, ensuring proper handling and security measures.
