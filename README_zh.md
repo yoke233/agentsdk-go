@@ -10,8 +10,8 @@ agentsdk-go 是一个模块化的 Agent 开发框架，实现了 Claude Code 的
 
 ### 技术指标
 
-- 核心代码：约 16,600 行
-- Agent 核心循环：171 行
+- 核心代码：约 20,300 行（生产代码，不含测试）
+- Agent 核心循环：189 行
 - 测试覆盖率：核心模块平均 90.5%
 - 模块数量：13 个独立包
 - 外部依赖：anthropic-sdk-go、fsnotify、gopkg.in/yaml.v3、google/uuid、golang.org/x/mod、golang.org/x/net

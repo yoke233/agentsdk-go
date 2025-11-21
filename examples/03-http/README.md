@@ -5,9 +5,11 @@ The leanest HTTP example: one shared `api.Runtime`, three endpoints, zero extra 
 ## Run
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
+# OR use ANTHROPIC_AUTH_TOKEN (takes precedence)
+# export ANTHROPIC_AUTH_TOKEN=your-token
 go run ./examples/03-http
 ```
-Defaults to `:8080`. Override with `AGENTSDK_HTTP_ADDR`. Choose a model with `AGENTSDK_MODEL` (default `claude-3-5-sonnet-20241022`).
+Defaults to `:8080`. Override with `AGENTSDK_HTTP_ADDR`. Choose a model with `AGENTSDK_MODEL` (default `claude-3-5-sonnet-20241022`). Optionally set `ANTHROPIC_BASE_URL` for custom endpoints.
 
 ## Endpoints
 - `GET /health` → `{"status":"ok"}`

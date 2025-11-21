@@ -15,7 +15,7 @@ This example wires every advanced capability into one runnable binary. Each feat
 ## Run
 ```bash
 cd examples/04-advanced
-# set ANTHROPIC_API_KEY only if you swap in a real provider; demo model is offline-safe
+# set ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN only if you swap in a real provider; demo model is offline-safe
 go run . --prompt "生成一份安全巡检摘要" --enable-mcp=false
 ```
 

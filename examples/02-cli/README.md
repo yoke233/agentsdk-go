@@ -3,7 +3,7 @@
 Run a minimal CLI loop that keeps session history and reads optional sandbox/tool config.
 
 Requirements:
-- `ANTHROPIC_API_KEY` must be set (e.g., `export ANTHROPIC_API_KEY=sk-...`).
+- `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` must be set (e.g., `export ANTHROPIC_API_KEY=sk-...`).
 - Optional: `SESSION_ID` seeds `--session-id`; defaults to `demo-session`.
 
 Launch:

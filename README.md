@@ -10,8 +10,8 @@ agentsdk-go is a modular agent development framework that implements Claude Code
 
 ### Technical Metrics
 
-- Core code: ~16,600 lines
-- Agent core loop: 171 lines
+- Core code: ~20,300 lines (production code, excluding tests)
+- Agent core loop: 189 lines
 - Test coverage: 90.5% average across core modules
 - Modules: 13 independent packages
 - External dependencies: anthropic-sdk-go, fsnotify, gopkg.in/yaml.v3, google/uuid, golang.org/x/mod, golang.org/x/net

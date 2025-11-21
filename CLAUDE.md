@@ -7,10 +7,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **agentsdk-go** is a from-scratch, production-ready Go Agent SDK that mirrors Claude Code's 7 core capabilities with a pure architecture approach benchmarked to Claude Code's stack. This SDK targets CLI, CI/CD, and enterprise platforms, prioritizing KISS-friendly modularity, a zero-dependency core, and the middleware interception system that extends Claude Code with a unique innovation.
 
 **Key metrics**:
-- ~6k LOC core code
-- 91.1% average test coverage across new modules
+- ~20k LOC production code (excluding tests)
+- 90.5% average test coverage across core modules
 - Zero external dependencies in core packages
-- Agent core loop <300 lines
+- Agent core loop: 189 lines
 
 ## Architecture
 
@@ -152,9 +152,9 @@ make coverage
 
 ### Agent Core Loop
 
-**Location**: `pkg/agent/agent.go`
+**Location**: `pkg/agent/agent.go` (189 lines)
 
-The agent loop is intentionally kept under 300 lines. Key points:
+The agent loop is intentionally kept concise. Key points:
 - Uses context for cancellation and timeout
 - Executes middleware at 6 distinct stages
 - Limits iterations via `MaxIterations` option
@@ -298,13 +298,76 @@ go test -run TestAgent_Run ./pkg/agent
 go test -bench=. ./pkg/agent
 ```
 
+## Quick Troubleshooting
+
+### Examples fail with "ANTHROPIC_API_KEY not set"
+- Copy `.env.example` to `.env` and set your API key
+- Use `source .env` before running examples
+- Or export directly: `export ANTHROPIC_API_KEY=sk-ant-...`
+- Alternatively, use `ANTHROPIC_AUTH_TOKEN` which takes precedence
+
+### Test hangs or times out
+- Some integration tests call live APIs and may take 10+ minutes
+- Run unit tests only: `go test -short ./...` (if short mode is implemented)
+- Increase timeout: `go test -timeout 15m ./pkg/api`
+- Skip specific slow tests: `go test -skip TestToolWhitelistDeniesExecution`
+
+### Sandbox blocks legitimate operations
+- Check `.claude/settings.json` permissions
+- Use `settings.local.json` for local overrides (gitignored)
+- Set `"sandbox": {"enabled": false}` for development
+
+### HTTP example fails to start
+- Check if port 8080 is already in use: `lsof -i :8080`
+- Set custom port: `export AGENTSDK_HTTP_ADDR=:9090`
+- Verify `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` is set
+
+## Documentation
+
+Key documentation files:
+- `README.md` - Project overview, features, quick start
+- `docs/architecture.md` - Detailed architecture analysis (横向对比 16 个项目)
+- `docs/getting-started.md` - Step-by-step tutorial
+- `docs/api-reference.md` - API documentation
+- `docs/security.md` - Security best practices
+- `examples/03-http/README.md` - HTTP API guide
+- `.claude/specs/claude-code-rewrite/` - Development plans and reports
+
+## Project Principles
+
+This codebase follows Linus Torvalds' philosophy:
+- **KISS** - Keep It Simple: Single responsibility, core files <300 lines
+- **YAGNI** - You Aren't Gonna Need It: Zero dependencies, extend as needed
+- **Never Break Userspace** - API stability, backward compatibility
+- **大道至简** - Simple interfaces, refined implementation
+
+## Important File Locations
+
+- Agent core: `pkg/agent/agent.go` (189 lines)
+- Tool registry: `pkg/tool/registry.go`
+- Tool executor: `pkg/tool/executor.go`
+- Built-in tools: `pkg/tool/builtin/bash.go`, `pkg/tool/builtin/file.go`, `pkg/tool/builtin/grep.go`, `pkg/tool/builtin/glob.go`
+- Model providers: `pkg/model/anthropic.go`, `pkg/model/provider.go`
+- Middleware chain: `pkg/middleware/chain.go`
+- API entry point: `pkg/api/agent.go`
+- Security validator: `pkg/security/validator.go`
+- Sandbox manager: `pkg/sandbox/`
+- CLI tool: `cmd/cli/main.go`
+- HTTP server example: `examples/03-http/main.go`
+
+When adding new features, maintain the modular structure and keep test coverage ≥90%.
+
 ## Code Style & Conventions
 
 ### File Size Limit
 
-**CRITICAL**: Keep files under 500 lines. This project explicitly avoids the "巨型单文件" anti-pattern found in other SDKs.
+**Target**: Keep files under 300 lines for core logic, under 500 lines for feature modules. This project explicitly avoids the "巨型单文件" anti-pattern found in other SDKs.
 
-If a file exceeds 500 lines:
+Current status:
+- Agent core: 189 lines ✓
+- Most core modules: <300 lines ✓
+
+If a file approaches these limits:
 1. Split by responsibility (e.g., separate validators, helpers)
 2. Extract interfaces to their own files
 3. Move test helpers to `*_helpers_test.go`
@@ -455,46 +518,44 @@ Register before runtime creation via config or programmatically.
 6. **API Key Management**: Never hardcode API keys; use environment variables or secure config management
 7. **Command Security**: Built-in bash tool validates commands using `pkg/security/validator.go`; dangerous patterns are rejected by default
 
-## Documentation
+## Known Issues
 
-Key documentation files:
-- `README.md` - Project overview, features, quick start
-- `docs/architecture.md` - Detailed architecture analysis (横向对比 16 个项目)
-- `docs/getting-started.md` - Step-by-step tutorial
-- `docs/api-reference.md` - API documentation
-- `docs/security.md` - Security best practices
-- `examples/03-http/README.md` - HTTP API guide
-- `.claude/specs/claude-code-rewrite/` - Development plans and reports
+### Middleware Error Handling in Tool Loops
 
-## Project Principles
+**Issue**: If `AfterTool` middleware returns an error during multi-tool execution, the loop breaks early and only partial tool results are appended to history, causing a 400 error on the next iteration.
 
-This codebase follows Linus Torvalds' philosophy:
-- **KISS** - Keep It Simple: Single responsibility, core files <500 lines
-- **YAGNI** - You Aren't Gonna Need It: Zero dependencies, extend as needed
-- **Never Break Userspace** - API stability, backward compatibility
-- **大道至简** - Simple interfaces, refined implementation
+**Location**: `pkg/agent/agent.go:152-179`
 
-## Important File Locations
+**Scenario**: When the assistant returns multiple tool_use blocks (e.g., Read + Glob), if AfterTool middleware fails for tool #2, tool #1's result is recorded but tool #2's is lost. The next model call sees mismatched tool_use/tool_result counts.
 
-- Agent core: `pkg/agent/agent.go` (~163 lines)
-- Tool registry: `pkg/tool/registry.go`
-- Tool executor: `pkg/tool/executor.go`
-- Built-in tools: `pkg/tool/builtin/bash.go`, `pkg/tool/builtin/file.go`, `pkg/tool/builtin/grep.go`, `pkg/tool/builtin/glob.go`
-- Model providers: `pkg/model/anthropic.go`, `pkg/model/provider.go`
-- Middleware chain: `pkg/middleware/chain.go`
-- API entry point: `pkg/api/agent.go`
-- Security validator: `pkg/security/validator.go`
-- Sandbox manager: `pkg/sandbox/`
-- CLI tool: `cmd/cli/main.go`
-- HTTP server example: `examples/03-http/main.go`
+**Workaround**: Ensure `AfterTool` middleware logs errors but returns `nil` to allow all tool results to be processed. Alternatively, handle errors outside the tool execution loop.
 
-When adding new features, maintain the modular structure and keep test coverage ≥90%.
+## Testing Strategy
+
+### Test Coverage Requirements
+
+- Core modules: ≥90% coverage
+- New features: Must include tests
+- Use table-driven tests for multiple scenarios
+
+### Test Timeout Handling
+
+Some integration tests may have long execution times:
+- API tests have a 10-minute default timeout
+- Use `-timeout` flag to adjust: `go test -timeout 15m ./pkg/api`
+- For CI/CD, consider running integration tests separately from unit tests
+- Run unit tests only with: `go test -short ./...` (if short mode is implemented)
 
 ## Environment Variables
 
 ### Required
 
-- `ANTHROPIC_API_KEY` - Anthropic API key for Claude models (required for all examples)
+- `ANTHROPIC_API_KEY` - Anthropic API key for Claude models (required for all examples, unless using auth token)
+- `ANTHROPIC_AUTH_TOKEN` - Alternative to ANTHROPIC_API_KEY, takes precedence if both are set
+
+### Optional
+
+- `ANTHROPIC_BASE_URL` - Custom Anthropic API base URL (for proxy or private endpoints)
 
 ### Optional (HTTP example)
 
