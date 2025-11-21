@@ -18,7 +18,7 @@ import (
 const (
 	defaultAddr       = ":8080"
 	defaultModel      = "claude-3-5-sonnet-20241022"
-	defaultRunTimeout = 45 * time.Second
+	defaultRunTimeout = 10 * time.Minute // 10分钟，适配codex等长时间任务
 )
 
 func main() {

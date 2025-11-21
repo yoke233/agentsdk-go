@@ -19,9 +19,18 @@ Defaults to `:8080`. Override with `AGENTSDK_HTTP_ADDR`. Choose a model with `AG
 {
   "prompt": "Summarize agentsdk-go in one sentence",
   "session_id": "demo-123",          // optional; auto-generated when missing
-  "timeout_ms": 30000                // optional
+  "timeout_ms": 600000               // optional; default 600000ms (10 minutes)
 }
 ```
+
+**Timeout Configuration**:
+- Default timeout: **10 minutes** (适配codex、测试等长时间任务)
+- Override per request: Set `timeout_ms` in the request body (milliseconds)
+- Recommended timeouts:
+  - Simple commands: 30000 - 60000ms (30s - 1min)
+  - File operations: 60000 - 120000ms (1 - 2min)
+  - Codex analysis: 300000 - 600000ms (5 - 10min)
+  - Test suites: 600000 - 1800000ms (10 - 30min)
 
 ## Examples
 ```bash
