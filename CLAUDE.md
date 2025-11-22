@@ -198,6 +198,12 @@ Chain-of-responsibility pattern with 6 stages:
 
 State is passed through `middleware.State` with a `Values` map for cross-middleware data sharing.
 
+### Hooks
+
+**Location**: `pkg/core/hooks/`
+
+⚠️ **Breaking Change**: in-process hook interfaces (`PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, `Notification`) are removed. Hooks now run as shell commands via `ShellHook` and receive the event payload as JSON on stdin. Exit codes: `0=allow`, `1=deny`, `2=ask`, any other code errors out. The executor injects `hook_event_name`, optional `session_id`, and a payload block (`tool_input`, `tool_response`, `user_prompt`, `notification`, or `stop`). Configure hooks through `.claude/settings.json` (`Hooks.PreToolUse` / `Hooks.PostToolUse`) or programmatically with `api.Options.TypedHooks`.
+
 ### Message History
 
 **Location**: `pkg/message/`

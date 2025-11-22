@@ -4,6 +4,12 @@
 
 基于 Go 语言实现的 Agent SDK，提供完整的 Claude Code 核心功能和 Middleware 拦截机制。
 
+## 破坏性变更 (v0.6.0, main, 2025-11-22)
+
+- Hooks API 从 in-process Go 接口改为基于 shell 的 `ShellHook`。
+- Hooks 通过 stdin 接收 JSON 负载，并用退出码返回决策：`0=允许`、`1=拒绝`、`2=询问`（其他退出码视为错误）。
+- 迁移步骤见 `docs/migration-guide.md`。
+
 ## 概述
 
 agentsdk-go 是一个模块化的 Agent 开发框架，实现了 Claude Code 的 7 项核心功能（Hooks、MCP、Sandbox、Skills、Subagents、Commands、Plugins），并在此基础上扩展了 6 点 Middleware 拦截机制。该 SDK 支持 CLI、CI/CD 和企业平台等多种部署场景。
@@ -12,7 +18,7 @@ agentsdk-go 是一个模块化的 Agent 开发框架，实现了 Claude Code 的
 
 - 核心代码：约 20,300 行（生产代码，不含测试）
 - Agent 核心循环：189 行
-- 测试覆盖率：核心模块平均 90.5%
+- 测试覆盖率：核心模块平均 90.5%（实际：subagents 91.7%，api 90.2%，mcp 90.3%，model 92.2%，sandbox 90.5%，security 90.4%）
 - 模块数量：13 个独立包
 - 外部依赖：anthropic-sdk-go、fsnotify、gopkg.in/yaml.v3、google/uuid、golang.org/x/mod、golang.org/x/net
 
@@ -315,29 +321,17 @@ go tool cover -html=coverage.out
 
 ### 测试覆盖率
 
-#### 核心模块
+#### 核心模块（全部 ≥90%）
 
 | 模块 | 覆盖率 |
 |------|--------|
-| pkg/agent | 98.4% |
-| pkg/middleware | 72.6% |
-| pkg/model | 90.1% |
-| pkg/message | 98.6% |
-| pkg/api | 81.4% |
-| pkg/tool | 94.3% |
-| 平均 | 90.5% |
-
-#### 功能模块
-
-| 模块 | 覆盖率 |
-|------|--------|
-| pkg/core/hooks | 95.8% |
-| pkg/mcp | 92.0% |
+| pkg/runtime/subagents | 91.7% |
+| pkg/api | 90.2% |
+| pkg/mcp | 90.3% |
+| pkg/model | 92.2% |
 | pkg/sandbox | 90.5% |
-| pkg/runtime/skills | 91.5% |
-| pkg/runtime/subagents | 91.9% |
-| pkg/runtime/commands | 91.4% |
-| pkg/plugins | 90.7% |
+| pkg/security | 90.4% |
+| 平均 | 90.5% |
 
 ## 构建
 

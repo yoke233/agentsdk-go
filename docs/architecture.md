@@ -108,14 +108,38 @@
 | **状态一致性** | Kode-agent-sdk 模板累计污染<br>opencode 分享队列 silent drop<br>kimi-cli 审批未持久化 | 状态丢失<br>难以调试 | WAL + 事务语义<br>错误重试 |
 | **Streaming bug** | mini-claude-code-go 流模式失效<br>anthropic-sdk-go SSE 大小写问题 | 功能不可用<br>线上故障 | 集成测试覆盖<br>Mock 验证 |
 
-### 2.4 Middleware 系统设计（agentsdk-go 独有）
+### 2.4 懒加载性能优化
 
-#### 2.4.1 设计动机（为何需要 6 个拦截点）
+#### 2.4.1 懒加载策略（Skills / Commands）
+- **Skills**: 注册阶段只记录路径与 handler stub，不读取 SKILL.md；首个 `Execute` 前通过 `sync.Once` 读取文件并解析 frontmatter+body。
+- **Commands**: 启动仅做元数据探测（1 次 meta read），命令体和 stat 在首次 `Handle` 时才触发；读取与解析同样由 `sync.Once` 包裹。
+
+#### 2.4.2 基准测试数据（每 op，100 次迭代平均）
+| Benchmark | 启动时 IO | 首次使用 IO | 内存分配 |
+|-----------|-----------|-------------|----------|
+| Skills 懒加载 | 0 startup-read/op | 3.000 body-read/op | 2,801,190 B/op · 18,304 allocs/op |
+| Commands 懒加载 | 0 startup-body-read/op · 1.000 startup-meta-read/op | 1.000 body-read/op · 1.000 stat/op | 2,426,483 B/op · 12,800 allocs/op |
+| Runtime Startup（含懒加载管线） | - | - | 7,866,045 B/op · 52,630 allocs/op；24.73 ms/op |
+
+#### 2.4.3 性能收益分析
+- **启动时间**: `BenchmarkRuntimeStartup` 显示完整 CLI 初始化（带懒加载）为 ~24.7 ms/op；主要耗时不再来自技能/命令文件 IO。
+- **IO 转移**: Skills/Commands 启动阶段的正文读取从“至少 1 次”降到 **0**（假设原实现 eager-read），IO 完全移到首次调用，启动路径的 body read 降幅 100%；Commands 仅保留 1 次 meta read 以获取 frontmatter。
+- **首用成本**: Skills 首次执行仍有 3 次 body-read/op（多次解析同一正文），Commands 为 1 次 body read + 1 次 stat，可继续通过缓存解析结果来压缩冷路径。
+- **内存占用**: 启动阶段不再持有正文缓存，B/op 下降到 ~2.4–2.8 MB（技能/命令加载），较运行时全量初始化的 7.86 MB 明显更轻。
+
+#### 2.4.4 实现要点
+- `sync.Once` 包裹正文与 frontmatter 解析，确保并发下只读一次。
+- frontmatter 解析与正文读取解耦：启动仅需要的 meta（命令），正文延迟到首次执行。
+- body 延迟加载后立即复用已解析结构，避免重复磁盘 IO 与重复分配。
+
+### 2.5 Middleware 系统设计（agentsdk-go 独有）
+
+#### 2.5.1 设计动机（为何需要 6 个拦截点）
 - **全链路治理**: 在 Agent→Model→Tool→回传的每个阶段暴露可插拔治理面，避免单点 Hook 无法覆盖工具调用与结果回填。
 - **短路保护**: 任一环节发现违规（如越权工具、超时响应）立即中断，减少无效推理成本。
 - **对标 Claude Code**: Claude Code 仅在模型/工具上提供有限 Hook，agentsdk-go 将拦截扩展为 6 段并内建超时，形成差异化优势。
 
-#### 2.4.2 拦截点详解
+#### 2.5.2 拦截点详解
 - `before_agent`: 会话入口前做租户/速率/审计初始化。
 - `before_model`: Prompt 组装前做上下文裁剪、敏感字段遮蔽。
 - `after_model`: 模型输出后做安全过滤、拒绝理由重写。
@@ -123,7 +147,7 @@
 - `after_tool`: 结果回填前做降噪、结构化封装、观测指标打点。
 - `after_agent`: 对最终回复做格式化、用量上报、持久化。
 
-#### 2.4.3 Chain 执行器（串行 + 短路 + 超时）
+#### 2.5.3 Chain 执行器（串行 + 短路 + 超时）
 - **串行执行**: `Chain.Execute` 逐个中间件调用，保持确定性顺序。
 - **短路语义**: 首个返回 error 的中间件立即中断后续执行并让 Agent 失败收敛。
 - **超时保护**: `WithTimeout` 为每个阶段包裹 `context.WithTimeout`，避免慢中间件拖垮会话。
@@ -150,18 +174,18 @@ _ = a.mw.Execute(ctx, middleware.StageAfterModel, state)
 // 工具调用前后同理
 ```
 
-#### 2.4.4 使用场景
+#### 2.5.4 使用场景
 - **日志/审计**: 统一入口收集 request/工具调用/最终回复三段日志。
 - **限流/配额**: `before_agent` + `before_model` 组合做租户限流和 prompt token 预算。
 - **安全检查**: `before_tool` 过滤危险命令，`after_tool` 做结果脱敏与防注入。
 - **监控/告警**: `after_agent` 上报耗时、QPS、error rate，支持熔断/报警。
 
-#### 2.4.5 实现细节（集成点）
+#### 2.5.5 实现细节（集成点）
 - **状态传递**: `middleware.State` 贯穿 6 段，记录 `Agent Context`、`ModelOutput`、`ToolCall/Result` 与 `Values` 扩展字段。
 - **线程安全**: `Chain.Use` 内置写锁，运行时追加中间件不会破坏正在执行的链。
 - **零依赖 & 可预测**: 不引入反射/泛型，保持核心 <150 行；相比 Claude Code 的多 Hook 抽象，agentsdk-go 更符合 KISS。
 
-### 2.5 技术选型对比
+### 2.6 技术选型对比
 
 | 语言 | 优势 | 劣势 | 适用场景 |
 |-----|------|-----|---------|

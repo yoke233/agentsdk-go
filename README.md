@@ -4,6 +4,10 @@
 
 An Agent SDK implemented in Go that provides the full Claude Code core capabilities and middleware interception.
 
+## Breaking Changes in v0.6.0 (main, 2025-11-22)
+
+- Hooks are no longer in-process Go interfaces (`PreToolUseHook`, `PostToolUseHook`, etc.). The runtime now executes shell-based `ShellHook` commands that consume JSON on stdin and communicate decisions via exit codes (`0=allow`, `1=deny`, `2=ask`). Configure them through `.claude/settings.json` (`Hooks.PreToolUse/PostToolUse`) or programmatically with `api.Options.TypedHooks`. See `docs/migration-guide.md` for concrete migration steps.
+
 ## Overview
 
 agentsdk-go is a modular agent development framework that implements Claude Code's seven core capabilities (Hooks, MCP, Sandbox, Skills, Subagents, Commands, Plugins) and extends them with a six-point middleware interception mechanism. The SDK supports deployment scenarios across CLI, CI/CD, and enterprise platforms.
@@ -12,7 +16,7 @@ agentsdk-go is a modular agent development framework that implements Claude Code
 
 - Core code: ~20,300 lines (production code, excluding tests)
 - Agent core loop: 189 lines
-- Test coverage: 90.5% average across core modules
+- Test coverage: 90–93% across six core modules; all ≥90% (subagents 91.7%, api 90.2%, mcp 90.3%, model 92.2%, sandbox 90.5%, security 90.4%)
 - Modules: 13 independent packages
 - External dependencies: anthropic-sdk-go, fsnotify, gopkg.in/yaml.v3, google/uuid, golang.org/x/mod, golang.org/x/net
 
@@ -329,29 +333,17 @@ go tool cover -html=coverage.out
 
 ### Test Coverage
 
-#### Core Modules
+#### Core Modules (all ≥90%)
 
 | Module | Coverage |
 |--------|----------|
-| pkg/agent | 98.4% |
-| pkg/middleware | 72.6% |
-| pkg/model | 90.1% |
-| pkg/message | 98.6% |
-| pkg/api | 81.4% |
-| pkg/tool | 94.3% |
-| Average | 90.5% |
-
-#### Feature Modules
-
-| Module | Coverage |
-|--------|----------|
-| pkg/core/hooks | 95.8% |
-| pkg/mcp | 92.0% |
+| pkg/runtime/subagents | 91.7% |
+| pkg/api | 90.2% |
+| pkg/mcp | 90.3% |
+| pkg/model | 92.2% |
 | pkg/sandbox | 90.5% |
-| pkg/runtime/skills | 91.5% |
-| pkg/runtime/subagents | 91.9% |
-| pkg/runtime/commands | 91.4% |
-| pkg/plugins | 90.7% |
+| pkg/security | 90.4% |
+| Average | 90.5% |
 
 ## Build
 
