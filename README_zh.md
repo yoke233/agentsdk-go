@@ -10,6 +10,13 @@
 - Hooks 通过 stdin 接收 JSON 负载，并用退出码返回决策：`0=允许`、`1=拒绝`、`2=询问`（其他退出码视为错误）。
 - 迁移步骤见 `docs/migration-guide.md`。
 
+## 破坏性变更 (v0.2.0, 2025-01-31)
+
+- 迁移到官方 MCP Go SDK `v1.1.0`；删除自研 `pkg/mcp/adapter`（-819 行）。
+- `RegisterMCPServer(ctx, serverPath)` 现在需要 `context.Context` 参数。
+- `Response.ProjectConfig` 已废弃；使用 `Response.Settings` 替代（v0.3.0 将移除）。
+- 新增 `runtime.Close()` 实现 MCP 会话清理（应在 `defer` 中调用）。
+
 ## 概述
 
 agentsdk-go 是一个模块化的 Agent 开发框架，实现了 Claude Code 的 7 项核心功能（Hooks、MCP、Sandbox、Skills、Subagents、Commands、Plugins），并在此基础上扩展了 6 点 Middleware 拦截机制。该 SDK 支持 CLI、CI/CD 和企业平台等多种部署场景。
@@ -165,6 +172,10 @@ runtime, err := api.New(ctx, api.Options{
     ModelFactory:  provider,
     Middleware:    []middleware.Middleware{loggingMiddleware},
 })
+if err != nil {
+    log.Fatal(err)
+}
+defer runtime.Close()
 ```
 
 ### 流式输出
@@ -495,6 +506,7 @@ customMiddleware := middleware.Middleware{
 
 - Go 1.24.0+
 - [anthropic-sdk-go](https://github.com/anthropics/anthropic-sdk-go) - Anthropic 官方 SDK
+- [modelcontextprotocol/go-sdk](https://github.com/modelcontextprotocol/go-sdk) - 官方 MCP SDK
 - [fsnotify](https://github.com/fsnotify/fsnotify) - 文件系统监控
 - [yaml.v3](https://gopkg.in/yaml.v3) - YAML 解析
 - [google/uuid](https://github.com/google/uuid) - UUID 工具
