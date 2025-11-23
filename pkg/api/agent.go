@@ -121,7 +121,7 @@ func New(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 	mcpServers := collectMCPServers(settings, plugins, opts.MCPServers)
-	if err := registerMCPServers(registry, sbox, mcpServers); err != nil {
+	if err := registerMCPServers(ctx, registry, sbox, mcpServers); err != nil {
 		return nil, err
 	}
 	executor := tool.NewExecutor(registry, sbox)
@@ -215,7 +215,12 @@ func (rt *Runtime) RunStream(ctx context.Context, req Request) (<-chan StreamEve
 }
 
 // Close releases held resources.
-func (rt *Runtime) Close() error { return nil }
+func (rt *Runtime) Close() error {
+	if rt.registry != nil {
+		rt.registry.Close()
+	}
+	return nil
+}
 
 // Config returns the last loaded project config.
 func (rt *Runtime) Config() *config.Settings {
@@ -364,7 +369,7 @@ func (rt *Runtime) buildResponse(prep preparedRun, result runResult) *Response {
 		CommandResults:  prep.commandResults,
 		SkillResults:    prep.skillResults,
 		HookEvents:      rt.recorder.Drain(),
-		ProjectConfig:   rt.Config(),
+		ProjectConfig:   rt.Settings(),
 		Settings:        rt.Settings(),
 		Plugins:         snapshotPlugins(rt.plugins),
 		SandboxSnapshot: rt.sandboxReport(),
@@ -947,12 +952,12 @@ func effectiveEntryPoint(opts Options) EntryPoint {
 	return entry
 }
 
-func registerMCPServers(registry *tool.Registry, manager *sandbox.Manager, servers []string) error {
+func registerMCPServers(ctx context.Context, registry *tool.Registry, manager *sandbox.Manager, servers []string) error {
 	for _, server := range servers {
 		if err := enforceSandboxHost(manager, server); err != nil {
 			return err
 		}
-		if err := registry.RegisterMCPServer(server); err != nil {
+		if err := registry.RegisterMCPServer(ctx, server); err != nil {
 			return fmt.Errorf("api: register MCP %s: %w", server, err)
 		}
 	}

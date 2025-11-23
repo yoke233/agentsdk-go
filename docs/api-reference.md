@@ -122,7 +122,8 @@ fmt.Printf("usage: %d tokens, stop reason=%s\n", resp.Usage.TotalTokens, resp.St
 - `type Tool interface` (`tool.go:6`) 包含 `Name`, `Description`, `Schema() *JSONSchema`, `Execute(ctx, params)`。若 `Schema` 返回 `nil`，注册表会跳过验证。
 - `type JSONSchema`、`type Validator`、`DefaultValidator` 定义在 `schema.go`、`validator.go` 中，Registry 在执行前调用 `validator.Validate`。可用 `registry.SetValidator` 注入自定义实现。
 - `type Registry struct` (`registry.go:20`) 提供线程安全的 `Register`, `Get`, `List`, `Execute`。`Register` 会拒绝空名称或重复注册；`Execute` 在取回工具后执行 schema 校验，再调用工具本身。
-- MCP 集成：`RegisterMCPServer(serverPath string)` (`registry.go:82`) 通过 `mcpTransportBuilder` 构造 SSE 或 stdio 客户端，遍历远端工具描述生成 `remoteTool`，并以 `mcpDefaultProtocolVersion` 握手；添加的工具与本地工具共享命名空间。
+- MCP 集成：`RegisterMCPServer(ctx context.Context, serverPath string)` (`registry.go:118`) 通过 `newMCPClient` 构造 SSE 或 stdio `ClientSession`，遍历远端工具描述生成 `remoteTool`；添加的工具与本地工具共享命名空间。
+- 资源释放：`Registry.Close()` (`registry.go:198`) 关闭注册表追踪的 MCP 会话，重复调用安全，关闭错误仅记录日志，不会影响本地工具。
 - `type Executor struct` (`executor.go:16`) 将 `Registry` 与可选 `sandbox.Manager` 绑定。`Execute` 会 `cloneParams()`，执行前调用 `sandbox.Enforce`。`ExecuteAll` 并发跑多工具并保持返回顺序。
 - `type Call struct` (`types.go:14`) 封装一次工具调用，加上 `Path`, `Host`, `Usage sandbox.ResourceUsage` 使 sandbox 层可以依赖请求上下文。
 - `type CallResult` (`types.go:36`) 记录 `StartedAt`, `CompletedAt`, `Duration()`。出错时 `Err` 非空且 `Result` 可能为 `nil`。
@@ -140,7 +141,7 @@ if err != nil {
 fmt.Printf("%s -> success=%v output=%s\n", res.Call.Name, res.Result.Success, res.Result.Output)
 ```
 
-- **注意事项**：`Executor.Execute` 会在 `e == nil` 或 `registry == nil` 时返回 `executor is not initialised`；`RegisterMCPServer` 要求远端工具名非空且未注册，否则直接失败；`cloneParams` 只做浅拷贝的 map/切片递归复制，非 Go map/切片的嵌套类型需要调用方自行处理；当 sandbox 配置了受限主机/路径，传入的 `Call.Path` 必须是绝对路径。
+- **注意事项**：`Executor.Execute` 会在 `e == nil` 或 `registry == nil` 时返回 `executor is not initialised`；`RegisterMCPServer` 要求远端工具名非空且未注册，否则直接失败，并使用调用方的 `ctx` 传递超时/取消；`cloneParams` 只做浅拷贝的 map/切片递归复制，非 Go map/切片的嵌套类型需要调用方自行处理；当 sandbox 配置了受限主机/路径，传入的 `Call.Path` 必须是绝对路径。
 
 ### 调度扩展
 
@@ -149,6 +150,10 @@ fmt.Printf("%s -> success=%v output=%s\n", res.Call.Name, res.Result.Success, re
 - `remoteTool`（在 `registry.go` 中定义）会把 MCP 工具封装成本地 `Tool`，其 `Execute` 实际是调用 `client.CallTool`（见 `pkg/tool/registry.go` 后段）；因此远端工具的 schema 验证同样走 `validator`。
 - `Call.cloneParams` (`types.go:25`) 会递归处理 `map[string]any` 与 `[]any`，但不会深拷贝 struct；若参数中包含指向共享缓冲区的 byte slice，需提前复制。
 - `CallResult.Duration` 提供方便的运行时指标，可将其汇总到 `core/events.ToolResultPayload.Duration` 形成时序统计。
+
+## pkg/mcp — MCP 客户端与兼容层
+
+- 兼容层：`type SpecClient` / `NewSpecClient(spec string)` (`pkg/mcp/mcp.go:63-108`) 以 spec 字符串创建 `ClientSession` 并暴露 `ListTools`、`InvokeTool`、`Close` 的缩减接口；**Deprecated**，仅为旧版公开 API 兼容，推荐直接使用 go-sdk 的 `ClientSession`。
 
 ## pkg/message — Store、Session、LRU 策略基石
 
@@ -217,7 +222,7 @@ bus.Close()
 
 - `type Options` (`pkg/api/options.go:52`) 是 Runtime 构造输入。核心字段：`EntryPoint`, `Mode ModeContext`, `ProjectRoot`, `ClaudeDir`, `Model model.Model`, `ModelFactory`, `SystemPrompt`, `Middleware []middleware.Middleware`, `MiddlewareTimeout`, `MaxIterations`, `Timeout`, `TokenLimit`, `MaxSessions`, `Tools []tool.Tool`, `MCPServers []string`, `TypedHooks`, `HookMiddleware`, `Skills`, `Commands`, `Subagents`, `Sandbox SandboxOptions`。`withDefaults` 会设置 `EntryPoint`, `Mode.EntryPoint`, `ProjectRoot`, `Sandbox.Root`, `MaxSessions`。
 - `type Request` (`options.go:115`) 包含 `Prompt`, `Mode`, `SessionID`, `Traits`, `Tags`, `Channels`, `Metadata`, `TargetSubagent`, `ToolWhitelist`, `ForceSkills`。`request.normalized` (见 `pkg/api/agent.go:150`) 会补齐 `SessionID`、合并 `Mode`、清理 prompt。
-- `type Response` (`options.go:132`) 组合 Agent 输出、技能/命令执行结果、Hook 事件、`SandboxReport`、`ProjectConfig`。`Result` 内嵌 `model.Usage` 与 `ToolCalls`。
+- `type Response` (`options.go:132`) 组合 Agent 输出、技能/命令执行结果、Hook 事件、Sandbox 报告、`Settings` 与插件快照。`Result` 内嵌 `model.Usage` 与 `ToolCalls`。
 - `type Runtime struct` (`agent.go:24`) 汇集配置 loader、sandbox、tool registry、executor、progress recorder、hooks、`historyStore`、skills/commands/subagents 管理器，并通过 `sync.RWMutex` 保护可变配置。
 - `func New(ctx, opts) (*Runtime, error)` (`agent.go:40`) 负责：加载配置（`config.Loader`）、解析模型（`resolveModel`）、构建 sandbox (`buildSandboxManager`)、注册工具/MCP 服务器、搭建 hooks/skills/commands/subagents，并用 `newHistoryStore(opts.MaxSessions)` 创建 LRU session 存储。
 - `func (rt *Runtime) Run(ctx, req) (*Response, error)` (`agent.go:70`) 执行同步流程，内部 `prepare` 会验证 prompt、拉取 session history、执行 commands/skills/subagents、构建 `middleware.State`，随后调用 `runAgent`。

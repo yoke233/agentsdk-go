@@ -296,7 +296,7 @@ func TestRegisterCommandsEmpty(t *testing.T) {
 func TestRegisterMCPServersNoop(t *testing.T) {
 	registry := tool.NewRegistry()
 	mgr := sandbox.NewManager(nil, sandbox.NewDomainAllowList(), nil)
-	if err := registerMCPServers(registry, mgr, nil); err != nil {
+	if err := registerMCPServers(context.Background(), registry, mgr, nil); err != nil {
 		t.Fatalf("register MCP servers: %v", err)
 	}
 }

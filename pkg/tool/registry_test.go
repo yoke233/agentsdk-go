@@ -157,7 +157,7 @@ func TestRegisterMCPServerSSE(t *testing.T) {
 	defer h.Close()
 
 	r := NewRegistry()
-	if err := r.RegisterMCPServer(h.URL()); err != nil {
+	if err := r.RegisterMCPServer(context.Background(), h.URL()); err != nil {
 		t.Fatalf("register MCP: %v", err)
 	}
 

@@ -37,7 +37,7 @@ func TestCompleteBuildsRequestAndParsesToolUse(t *testing.T) {
 
 	m := &anthropicModel{
 		msgs:       mock,
-		model:      anthropicsdk.ModelClaude3_7SonnetLatest, //nolint:staticcheck // exercise deprecated constant for compatibility
+		model:      anthropicsdk.ModelClaude3_7SonnetLatest, //nolint:staticcheck // use deprecated constant in test
 		maxTokens:  256,
 		maxRetries: 0,
 		system:     "base-system",
@@ -135,7 +135,7 @@ func TestRetryOnTransientError(t *testing.T) {
 	}
 	m := &anthropicModel{
 		msgs:       mock,
-		model:      anthropicsdk.ModelClaude3_7SonnetLatest, //nolint:staticcheck // exercise deprecated constant for compatibility
+		model:      anthropicsdk.ModelClaude3_7SonnetLatest, //nolint:staticcheck // use deprecated constant in test
 		maxTokens:  32,
 		maxRetries: 1,
 	}
@@ -315,7 +315,7 @@ func TestStreamDeltasAndToolUse(t *testing.T) {
 
 	m := &anthropicModel{
 		msgs:       mock,
-		model:      anthropicsdk.ModelClaude3_7SonnetLatest, //nolint:staticcheck // exercise deprecated constant for compatibility
+		model:      anthropicsdk.ModelClaude3_7SonnetLatest, //nolint:staticcheck // use deprecated constant in test
 		maxTokens:  32,
 		maxRetries: 0,
 	}
@@ -470,7 +470,7 @@ func TestAdditionalBranches(t *testing.T) {
 	}
 
 	cp := m.countParams(anthropicsdk.MessageNewParams{
-		Model: anthropicsdk.ModelClaude3_7SonnetLatest, //nolint:staticcheck // exercise deprecated constant for compatibility
+		Model: anthropicsdk.ModelClaude3_7SonnetLatest, //nolint:staticcheck // use deprecated constant in test
 		System: []anthropicsdk.TextBlockParam{
 			{Text: "sys"},
 		},
@@ -582,7 +582,7 @@ func TestStreamUnavailable(t *testing.T) {
 			return nil, errors.New("boom")
 		},
 	}
-	modelName := anthropicsdk.ModelClaude3_7SonnetLatest //nolint:staticcheck // exercise deprecated constant for compatibility
+	modelName := anthropicsdk.ModelClaude3_7SonnetLatest //nolint:staticcheck // use deprecated constant in test
 	err := (&anthropicModel{msgs: mock, model: modelName, maxTokens: 1}).CompleteStream(
 		context.Background(),
 		Request{Messages: []Message{{Role: "user", Content: "hi"}}},
@@ -623,7 +623,7 @@ func TestNewAnthropicBranches(t *testing.T) {
 
 func TestSessionIDMetadataPropagation(t *testing.T) {
 	m := &anthropicModel{
-		model:     anthropicsdk.ModelClaude3_7SonnetLatest, //nolint:staticcheck // use deprecated constant for compatibility coverage
+		model:     anthropicsdk.ModelClaude3_7SonnetLatest, //nolint:staticcheck // use deprecated constant in test
 		maxTokens: 16,
 	}
 

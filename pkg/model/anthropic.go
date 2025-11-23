@@ -637,8 +637,8 @@ func usageFromFallback(final anthropicsdk.Usage, tracked Usage) Usage {
 const defaultAnthropicModel = anthropicsdk.ModelClaudeSonnet4_5_20250929
 
 var supportedAnthropicModels = []anthropicsdk.Model{
-	anthropicsdk.ModelClaude3_7SonnetLatest,   //nolint:staticcheck // keep deprecated for backwards compatibility
-	anthropicsdk.ModelClaude3_7Sonnet20250219, //nolint:staticcheck // keep deprecated for backwards compatibility
+	anthropicsdk.ModelClaude3_7SonnetLatest,   //nolint:staticcheck // deprecated but still accepted
+	anthropicsdk.ModelClaude3_7Sonnet20250219, //nolint:staticcheck // deprecated but still accepted
 	anthropicsdk.ModelClaude3_5HaikuLatest,
 	anthropicsdk.ModelClaude3_5Haiku20241022,
 	anthropicsdk.ModelClaudeHaiku4_5,
@@ -652,8 +652,8 @@ var supportedAnthropicModels = []anthropicsdk.Model{
 	anthropicsdk.ModelClaudeOpus4_20250514,
 	anthropicsdk.ModelClaude4Opus20250514,
 	anthropicsdk.ModelClaudeOpus4_1_20250805,
-	anthropicsdk.ModelClaude3OpusLatest,      //nolint:staticcheck // keep deprecated for backwards compatibility
-	anthropicsdk.ModelClaude_3_Opus_20240229, //nolint:staticcheck // keep deprecated for backwards compatibility
+	anthropicsdk.ModelClaude3OpusLatest,      //nolint:staticcheck // deprecated but still accepted
+	anthropicsdk.ModelClaude_3_Opus_20240229, //nolint:staticcheck // deprecated but still accepted
 	anthropicsdk.ModelClaude_3_Haiku_20240307,
 }
 
