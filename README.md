@@ -12,13 +12,13 @@ agentsdk-go is a modular agent development framework that implements Claude Code
 
 - Core code: ~20,300 lines (production code, excluding tests)
 - Agent core loop: 189 lines
-- Test coverage: 90–93% across six core modules; all ≥90% (subagents 91.7%, api 90.2%, mcp 90.3%, model 92.2%, sandbox 90.5%, security 90.4%)
+- Test coverage: 90–93% across six core modules; all ≥90% (subagents 91.7%, api 91.0%, mcp 90.3%, model 92.2%, sandbox 90.5%, security 90.4%)
 - Modules: 13 independent packages
 - External dependencies: anthropic-sdk-go, fsnotify, gopkg.in/yaml.v3, google/uuid, golang.org/x/mod, golang.org/x/net
 
 ## Features
 
-- Four-layer example path: `examples/01-basic` (minimal request/response), `examples/02-cli` (interactive REPL), `examples/03-http` (REST + SSE server on :8080), `examples/04-advanced` (full pipeline with middleware, hooks, MCP, sandbox, skills, subagents)
+- Five-layer example path: `examples/01-basic` (minimal request/response), `examples/02-cli` (interactive REPL), `examples/03-http` (REST + SSE server on :8080), `examples/04-advanced` (full pipeline with middleware, hooks, MCP, sandbox, skills, subagents), `examples/05-custom-tools` (selective built-in tools and custom tool registration)
 
 ## System Architecture
 
@@ -227,7 +227,7 @@ See a runnable demo in `examples/05-custom-tools`.
 
 ## Examples
 
-The repository includes four progressive examples aligned to the new four-layer path:
+The repository includes five progressive examples aligned to the new five-layer path:
 - `01-basic` – minimal single request/response.
 - `02-cli` – interactive REPL with session history and optional config load.
 - `03-http` – REST + SSE server on `:8080`.
@@ -263,7 +263,8 @@ agentsdk-go/
 │   ├── 01-basic/               # Minimal single request/response
 │   ├── 02-cli/                 # CLI REPL with session history
 │   ├── 03-http/                # HTTP server (REST + SSE)
-│   └── 04-advanced/            # Full pipeline (middleware, hooks, MCP, sandbox, skills, subagents)
+│   ├── 04-advanced/            # Full pipeline (middleware, hooks, MCP, sandbox, skills, subagents)
+│   └── 05-custom-tools/        # Custom tool registration and selective built-in tools
 ├── test/integration/           # Integration tests
 └── docs/                       # Documentation
 ```
@@ -371,12 +372,12 @@ go tool cover -html=coverage.out
 | Module | Coverage |
 |--------|----------|
 | pkg/runtime/subagents | 91.7% |
-| pkg/api | 90.2% |
+| pkg/api | 91.0% |
 | pkg/mcp | 90.3% |
 | pkg/model | 92.2% |
 | pkg/sandbox | 90.5% |
 | pkg/security | 90.4% |
-| Average | 90.5% |
+| Average | 90.6% |
 
 ## Build
 
@@ -404,15 +405,26 @@ make clean
 
 ## Built-in Tools
 
-The SDK ships with the following built-in tools (under `pkg/tool/builtin/`):
+The SDK ships with the following built-in tools:
 
+### Core Tools (under `pkg/tool/builtin/`)
 - `bash` - Execute shell commands with working directory and timeout configuration
-- `file_read` - Read file contents
-- `file_write` - Write file contents
+- `file_read` - Read file contents with offset/limit support
+- `file_write` - Write file contents (create or overwrite)
+- `file_edit` - Edit files with string replacement
 - `grep` - Regex search with recursion and file filtering
-- `glob` - File pattern matching
+- `glob` - File pattern matching with multiple patterns
 
-All built-in tools obey sandbox policies and are constrained by the path whitelist and command validator.
+### Extended Tools
+- `web_fetch` - Fetch web content with prompt-based extraction
+- `web_search` - Web search with domain filtering
+- `bash_output` - Read output from background bash processes
+- `todo_write` - Task tracking and management
+- `skill` - Execute skills from `.claude/skills/`
+- `slash_command` - Execute slash commands from `.claude/commands/`
+- `task` - Spawn subagents for complex tasks (CLI/CI modes only)
+
+All built-in tools obey sandbox policies and are constrained by the path whitelist and command validator. Use `EnabledBuiltinTools` to selectively enable tools or `CustomTools` to register your own implementations.
 
 ## Security Mechanisms
 
@@ -532,6 +544,7 @@ customMiddleware := middleware.Middleware{
 - [Getting Started](docs/getting-started.md) - Step-by-step tutorial
 - [API Reference](docs/api-reference.md) - API documentation
 - [Security](docs/security.md) - Security configuration guide
+- [Custom Tools Guide](docs/custom-tools-guide.md) - Custom tool registration and usage
 - [HTTP API Guide](examples/03-http/README.md) - HTTP server instructions
 - [Development Plan](.claude/specs/claude-code-rewrite/dev-plan.md) - Architecture plan
 - [Completion Report](.claude/specs/claude-code-rewrite/COMPLETION_REPORT.md) - Implementation report
