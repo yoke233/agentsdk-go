@@ -50,7 +50,7 @@ func TestLoadFromFS_Basic(t *testing.T) {
 	}
 }
 
-func TestLoadFromFS_Merge(t *testing.T) {
+func TestLoadFromFS_IgnoresUserDir(t *testing.T) {
 	projectRoot := t.TempDir()
 	userHome := t.TempDir()
 
@@ -64,13 +64,11 @@ func TestLoadFromFS_Merge(t *testing.T) {
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	if len(regs) != 2 {
-		t.Fatalf("expected 2 registrations, got %d", len(regs))
+	if len(regs) != 1 {
+		t.Fatalf("expected only project registrations, got %d", len(regs))
 	}
 
 	project := findRegistration(t, regs, "project-skill")
-	user := findRegistration(t, regs, "user-skill")
-
 	res, err := project.Handler.Execute(context.Background(), ActivationContext{})
 	if err != nil {
 		t.Fatalf("unexpected project result: %v %#v", err, res.Output)
@@ -82,16 +80,25 @@ func TestLoadFromFS_Merge(t *testing.T) {
 	if body, ok := projectOutput["body"].(string); !ok || body != "project body" {
 		t.Fatalf("unexpected project result: %v %#v", err, res.Output)
 	}
-	res, err = user.Handler.Execute(context.Background(), ActivationContext{})
-	if err != nil {
-		t.Fatalf("unexpected user result: %v %#v", err, res.Output)
+	for _, reg := range regs {
+		if reg.Definition.Name == "user-skill" {
+			t.Fatalf("user skills should be ignored")
+		}
 	}
-	userOutput, ok := res.Output.(map[string]any)
-	if !ok {
-		t.Fatalf("user output should be map, got %T", res.Output)
+}
+
+func TestLoadFromFS_NoProjectDir(t *testing.T) {
+	projectRoot := t.TempDir()
+	userHome := t.TempDir()
+
+	writeSkill(t, filepath.Join(userHome, ".claude", "skills", "user", "SKILL.md"), "user", "body")
+
+	regs, errs := LoadFromFS(LoaderOptions{ProjectRoot: projectRoot, UserHome: userHome, EnableUser: true})
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
 	}
-	if body, ok := userOutput["body"].(string); !ok || body != "user body" {
-		t.Fatalf("unexpected user result: %v %#v", err, res.Output)
+	if len(regs) != 0 {
+		t.Fatalf("expected no registrations, got %d", len(regs))
 	}
 }
 
@@ -166,16 +173,52 @@ func TestLoadFromFS_SupportFiles(t *testing.T) {
 	}
 }
 
+func TestLoadFromFS_ProjectPathNotDirectory(t *testing.T) {
+	root := t.TempDir()
+	skillsPath := filepath.Join(root, ".claude", "skills")
+	if err := os.MkdirAll(filepath.Dir(skillsPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(skillsPath, []byte("not a dir"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	regs, errs := LoadFromFS(LoaderOptions{ProjectRoot: root})
+	if len(regs) != 0 {
+		t.Fatalf("expected no registrations, got %d", len(regs))
+	}
+	if !hasError(errs, "not a directory") {
+		t.Fatalf("expected not a directory error, got %v", errs)
+	}
+}
+
+func TestLoadFromFS_SupportDirError(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".claude", "skills", "broken-support")
+
+	writeSkill(t, filepath.Join(dir, "SKILL.md"), "broken-support", "body")
+	mustWrite(t, filepath.Join(dir, "scripts"), "not a directory")
+
+	regs, errs := LoadFromFS(LoaderOptions{ProjectRoot: root})
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors during load: %v", errs)
+	}
+	if len(regs) != 1 {
+		t.Fatalf("expected 1 registration, got %d", len(regs))
+	}
+
+	_, err := regs[0].Handler.Execute(context.Background(), ActivationContext{})
+	if err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("expected support dir error, got %v", err)
+	}
+}
+
 func TestLoadFromFS_Errors(t *testing.T) {
 	projectRoot := t.TempDir()
-	userHome := t.TempDir()
 
 	// Valid skills
 	writeSkill(t, filepath.Join(projectRoot, ".claude", "skills", "good", "SKILL.md"), "good", "ok")
 	writeSkill(t, filepath.Join(projectRoot, ".claude", "skills", "unique", "SKILL.md"), "unique", "ok")
-
-	// Duplicate across user/project
-	writeSkill(t, filepath.Join(userHome, ".claude", "skills", "good", "SKILL.md"), "good", "user")
 
 	// Invalid cases
 	mustWrite(t, filepath.Join(projectRoot, ".claude", "skills", "broken", "SKILL.md"), "no frontmatter")
@@ -188,15 +231,12 @@ func TestLoadFromFS_Errors(t *testing.T) {
 	}, "\n"))
 	mustWrite(t, filepath.Join(projectRoot, ".claude", "skills", "malformed", "SKILL.md"), "---\nname: malformed\n")
 
-	regs, errs := LoadFromFS(LoaderOptions{ProjectRoot: projectRoot, UserHome: userHome, EnableUser: true})
+	regs, errs := LoadFromFS(LoaderOptions{ProjectRoot: projectRoot})
 	if len(regs) != 2 {
 		t.Fatalf("expected 2 valid registrations, got %d", len(regs))
 	}
-	if len(errs) < 3 {
+	if len(errs) < 2 {
 		t.Fatalf("expected aggregated errors, got %v", errs)
-	}
-	if !hasError(errs, "duplicate skill") {
-		t.Fatalf("missing duplicate warning: %v", errs)
 	}
 	if !hasError(errs, "missing YAML frontmatter") {
 		t.Fatalf("missing frontmatter error: %v", errs)

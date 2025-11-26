@@ -258,6 +258,15 @@ The SDK uses the `.claude/` directory for configuration, compatible with Claude 
 └── plugins/          # Plugin directory
 ```
 
+Configuration precedence (high → low):
+- Managed policies (`/etc/claude-code/managed-settings.json` or platform-specific equivalents)
+- Runtime overrides (CLI/API-provided)
+- `.claude/settings.local.json`
+- `.claude/settings.json`
+- Built-in defaults (shipped with the SDK)
+
+`~/.claude` is no longer read; use project-scoped files for all configuration.
+
 ### Configuration Example
 
 ```json

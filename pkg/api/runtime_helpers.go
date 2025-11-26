@@ -3,7 +3,6 @@ package api
 import (
 	"errors"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -154,18 +153,10 @@ type loaderOptions struct {
 }
 
 func buildLoaderOptions(opts Options) loaderOptions {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return loaderOptions{
-			ProjectRoot: opts.ProjectRoot,
-			UserHome:    "",
-			EnableUser:  false,
-		}
-	}
 	return loaderOptions{
 		ProjectRoot: opts.ProjectRoot,
-		UserHome:    home,
-		EnableUser:  true,
+		UserHome:    "",
+		EnableUser:  false,
 	}
 }
 
@@ -273,39 +264,13 @@ func mergeSkillRegistrations(fsRegs []skills.SkillRegistration, manual []SkillRe
 
 func buildSubagentsManager(opts Options) (*subagents.Manager, []error) {
 	loader := buildLoaderOptions(opts)
-	allRegs, errs := subagents.LoadFromFS(subagents.LoaderOptions{
-		ProjectRoot: loader.ProjectRoot,
-		UserHome:    loader.UserHome,
-		EnableUser:  loader.EnableUser,
-	})
-	projectRegs, _ := subagents.LoadFromFS(subagents.LoaderOptions{
+	projectRegs, errs := subagents.LoadFromFS(subagents.LoaderOptions{
 		ProjectRoot: loader.ProjectRoot,
 		UserHome:    loader.UserHome,
 		EnableUser:  false,
 	})
 
-	projectNames := map[string]struct{}{}
-	for _, reg := range projectRegs {
-		name := strings.ToLower(strings.TrimSpace(reg.Definition.Name))
-		if name != "" {
-			projectNames[name] = struct{}{}
-		}
-	}
-
-	userFirst := make([]subagents.SubagentRegistration, 0, len(allRegs))
-	for _, reg := range allRegs {
-		name := strings.ToLower(strings.TrimSpace(reg.Definition.Name))
-		if name == "" {
-			errs = append(errs, errors.New("api: subagent name is empty (loader)"))
-			continue
-		}
-		if _, hasProject := projectNames[name]; hasProject {
-			continue
-		}
-		userFirst = append(userFirst, reg)
-	}
-
-	merged := mergeSubagentRegistrations(userFirst, opts.Subagents, projectRegs, &errs)
+	merged := mergeSubagentRegistrations(opts.Subagents, projectRegs, &errs)
 	if len(merged) == 0 {
 		return nil, errs
 	}
@@ -319,8 +284,8 @@ func buildSubagentsManager(opts Options) (*subagents.Manager, []error) {
 	return mgr, errs
 }
 
-func mergeSubagentRegistrations(user []subagents.SubagentRegistration, manual []SubagentRegistration, project []subagents.SubagentRegistration, errs *[]error) []subagents.SubagentRegistration {
-	merged := make([]subagents.SubagentRegistration, 0, len(user)+len(manual)+len(project))
+func mergeSubagentRegistrations(manual []SubagentRegistration, project []subagents.SubagentRegistration, errs *[]error) []subagents.SubagentRegistration {
+	merged := make([]subagents.SubagentRegistration, 0, len(manual)+len(project))
 	index := map[string]int{}
 
 	add := func(def subagents.Definition, handler subagents.Handler, source string) {
@@ -342,9 +307,6 @@ func mergeSubagentRegistrations(user []subagents.SubagentRegistration, manual []
 		merged = append(merged, entry)
 	}
 
-	for _, reg := range user {
-		add(reg.Definition, reg.Handler, "user")
-	}
 	for _, reg := range manual {
 		add(reg.Definition, reg.Handler, "manual")
 	}

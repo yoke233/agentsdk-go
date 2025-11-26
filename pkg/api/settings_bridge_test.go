@@ -39,6 +39,51 @@ func TestLoadSettingsMergesOverridesAndInitialisesEnv(t *testing.T) {
 	}
 }
 
+func TestLoadSettingsUsesDefaultsWhenProjectConfigMissing(t *testing.T) {
+	root := t.TempDir()
+
+	settings, err := loadSettings(Options{ProjectRoot: root})
+	if err != nil {
+		t.Fatalf("load settings: %v", err)
+	}
+	if settings == nil {
+		t.Fatal("expected defaults, got nil settings")
+	}
+	if settings.CleanupPeriodDays != 30 {
+		t.Fatalf("expected default cleanup period 30, got %d", settings.CleanupPeriodDays)
+	}
+	if settings.Permissions == nil || settings.Permissions.DefaultMode != "askBeforeRunningTools" {
+		t.Fatalf("default permissions not applied: %+v", settings.Permissions)
+	}
+	if settings.Sandbox == nil || settings.Sandbox.Enabled == nil || *settings.Sandbox.Enabled {
+		t.Fatalf("expected sandbox disabled by default, got %+v", settings.Sandbox)
+	}
+	if settings.Env == nil || len(settings.Env) != 0 {
+		t.Fatalf("expected empty env map, got %+v", settings.Env)
+	}
+}
+
+func TestLoadSettingsClonesCustomLoader(t *testing.T) {
+	root := t.TempDir()
+	originalOverrides := &config.Settings{Model: "custom"}
+	custom := &config.SettingsLoader{ProjectRoot: root, RuntimeOverrides: originalOverrides}
+
+	settings, err := loadSettings(Options{
+		ProjectRoot:       root,
+		SettingsLoader:    custom,
+		SettingsOverrides: &config.Settings{Model: "override"},
+	})
+	if err != nil {
+		t.Fatalf("load settings: %v", err)
+	}
+	if settings.Model != "override" {
+		t.Fatalf("expected override model, got %s", settings.Model)
+	}
+	if custom.RuntimeOverrides != originalOverrides {
+		t.Fatalf("expected caller-provided loader to remain unchanged")
+	}
+}
+
 func TestProjectConfigFromSettingsNilInput(t *testing.T) {
 	cfg := projectConfigFromSettings(nil)
 	if cfg == nil {

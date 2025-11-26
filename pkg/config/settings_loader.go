@@ -12,9 +12,9 @@ import (
 	"strings"
 )
 
-// SettingsLoader composes settings from the official 5-layer precedence model.
+// SettingsLoader composes settings using the simplified precedence model.
 // Higher-priority layers override lower ones while preserving unspecified fields.
-// Order (low -> high): user < project < local project < runtime overrides < managed policies.
+// Order (low -> high): project < local < runtime overrides < managed policies.
 type SettingsLoader struct {
 	ProjectRoot      string
 	RuntimeOverrides *Settings
@@ -39,7 +39,6 @@ func (l *SettingsLoader) Load() (*Settings, error) {
 		name string
 		path string
 	}{
-		{name: "user", path: getUserSettingsPath()},
 		{name: "project", path: getProjectSettingsPath(root)},
 		{name: "local", path: getLocalSettingsPath(root)},
 	}
@@ -77,16 +76,6 @@ func getManagedSettingsPath() string {
 	default:
 		return "/etc/claude-code/managed-settings.json"
 	}
-}
-
-// getUserSettingsPath points to ~/.claude/settings.json.
-func getUserSettingsPath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		log.Printf("settings: resolve home dir failed: %v", err)
-		return ""
-	}
-	return filepath.Join(home, ".claude", "settings.json")
 }
 
 // getProjectSettingsPath returns the tracked project settings path.

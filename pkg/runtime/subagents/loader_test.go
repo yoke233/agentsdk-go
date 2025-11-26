@@ -41,17 +41,10 @@ func TestLoadFromFS_Basic(t *testing.T) {
 	}
 }
 
-func TestLoadFromFS_Priority(t *testing.T) {
+func TestLoadFromFS_IgnoresUserDir(t *testing.T) {
 	projectRoot := t.TempDir()
 	userHome := t.TempDir()
 
-	mustWrite(t, userHome, ".claude/agents/shared.md", strings.Join([]string{
-		"---",
-		"name: shared",
-		"description: user def",
-		"---",
-		"user prompt",
-	}, "\n"))
 	mustWrite(t, userHome, ".claude/agents/user-only.md", strings.Join([]string{
 		"---",
 		"name: user-only",
@@ -71,8 +64,8 @@ func TestLoadFromFS_Priority(t *testing.T) {
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	if len(regs) != 2 {
-		t.Fatalf("expected 2 registrations, got %d", len(regs))
+	if len(regs) != 1 {
+		t.Fatalf("expected only project registrations, got %d", len(regs))
 	}
 
 	shared := findRegistration(t, regs, "shared")
@@ -80,11 +73,31 @@ func TestLoadFromFS_Priority(t *testing.T) {
 	if err != nil || res.Output != "project prompt" {
 		t.Fatalf("expected project prompt, got %v %q", err, res.Output)
 	}
+	for _, reg := range regs {
+		if reg.Definition.Name == "user-only" {
+			t.Fatalf("user-level subagent should be ignored")
+		}
+	}
+}
 
-	userOnly := findRegistration(t, regs, "user-only")
-	res, err = userOnly.Handler.Handle(context.Background(), Context{}, Request{Instruction: "go"})
-	if err != nil || res.Output != "user only prompt" {
-		t.Fatalf("unexpected user-only output: %v %q", err, res.Output)
+func TestLoadFromFS_NoProjectDir(t *testing.T) {
+	projectRoot := t.TempDir()
+	userHome := t.TempDir()
+
+	mustWrite(t, userHome, ".claude/agents/user-only.md", strings.Join([]string{
+		"---",
+		"name: user-only",
+		"description: only user",
+		"---",
+		"user only prompt",
+	}, "\n"))
+
+	regs, errs := LoadFromFS(LoaderOptions{ProjectRoot: projectRoot, UserHome: userHome, EnableUser: true})
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if len(regs) != 0 {
+		t.Fatalf("expected no registrations without project config, got %d", len(regs))
 	}
 }
 

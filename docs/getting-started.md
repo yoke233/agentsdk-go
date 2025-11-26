@@ -301,6 +301,16 @@ SDK 使用 `.claude/` 目录管理配置：
 └── plugins/              # 插件目录
 ```
 
+### 配置优先级（高 → 低）
+
+1. 企业托管策略（`/etc/claude-code/managed-settings.json` 等平台路径）
+2. 运行时覆盖（CLI 参数 / API 传入的 `RuntimeOverrides`）
+3. `.claude/settings.local.json`
+4. `.claude/settings.json`
+5. SDK 内置默认值
+
+`~/.claude/` 已不再读取，请将配置放在项目目录内。
+
 ### settings.json 示例
 
 ```json

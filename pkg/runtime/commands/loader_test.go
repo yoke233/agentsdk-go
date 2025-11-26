@@ -42,7 +42,7 @@ func TestLoadFromFS_Basic(t *testing.T) {
 	}
 }
 
-func TestLoadFromFS_Priority(t *testing.T) {
+func TestLoadFromFS_IgnoresUserDir(t *testing.T) {
 	projectRoot := t.TempDir()
 	userHome := t.TempDir()
 
@@ -55,16 +55,15 @@ func TestLoadFromFS_Priority(t *testing.T) {
 		t.Fatalf("mkdir user: %v", err)
 	}
 
-	mustWrite(t, filepath.Join(userDir, "deploy.md"), "user version")
-	mustWrite(t, filepath.Join(userDir, "notes.md"), "note body")
+	mustWrite(t, filepath.Join(userDir, "user-only.md"), "user version")
 	mustWrite(t, filepath.Join(projectDir, "deploy.md"), "project version")
 
 	regs, errs := LoadFromFS(LoaderOptions{ProjectRoot: projectRoot, UserHome: userHome, EnableUser: true})
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	if len(regs) != 2 {
-		t.Fatalf("expected 2 registrations, got %d", len(regs))
+	if len(regs) != 1 {
+		t.Fatalf("expected only project registrations, got %d", len(regs))
 	}
 
 	deploy := findRegistration(t, regs, "deploy")
@@ -75,11 +74,26 @@ func TestLoadFromFS_Priority(t *testing.T) {
 	if res.Output != "project version" {
 		t.Fatalf("expected project body, got %q", res.Output)
 	}
+	for _, reg := range regs {
+		if reg.Definition.Name == "user-only" {
+			t.Fatalf("user-level command should be ignored")
+		}
+	}
+}
 
-	notes := findRegistration(t, regs, "notes")
-	res, err = notes.Handler.Handle(context.Background(), Invocation{})
-	if err != nil || res.Output != "note body" {
-		t.Fatalf("unexpected user command output: %v %q", err, res.Output)
+func TestLoadFromFS_NoProjectDir(t *testing.T) {
+	projectRoot := t.TempDir()
+	userHome := t.TempDir()
+
+	userDir := filepath.Join(userHome, ".claude", "commands")
+	mustWrite(t, filepath.Join(userDir, "ignored.md"), "user body")
+
+	regs, errs := LoadFromFS(LoaderOptions{ProjectRoot: projectRoot, UserHome: userHome, EnableUser: true})
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if len(regs) != 0 {
+		t.Fatalf("expected no registrations, got %d", len(regs))
 	}
 }
 

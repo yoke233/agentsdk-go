@@ -21,9 +21,9 @@ import (
 // LoaderOptions controls how skills are discovered from the filesystem.
 type LoaderOptions struct {
 	ProjectRoot string
-	// UserHome overrides the OS home directory when EnableUser is true.
+	// Deprecated: user-level scanning has been removed; this field is ignored.
 	UserHome string
-	// EnableUser toggles scanning ~/.claude/skills.
+	// Deprecated: user-level scanning has been removed; this flag is ignored.
 	EnableUser bool
 }
 
@@ -63,24 +63,6 @@ func LoadFromFS(opts LoaderOptions) ([]SkillRegistration, []error) {
 		errs          []error
 		allFiles      []SkillFile
 	)
-
-	if opts.EnableUser {
-		home := opts.UserHome
-		if home == "" {
-			h, err := os.UserHomeDir()
-			if err != nil {
-				errs = append(errs, fmt.Errorf("skills: resolve user home: %w", err))
-			} else {
-				home = h
-			}
-		}
-		if home != "" {
-			userDir := filepath.Join(home, ".claude", "skills")
-			files, loadErrs := loadSkillDir(userDir)
-			errs = append(errs, loadErrs...)
-			allFiles = append(allFiles, files...)
-		}
-	}
 
 	projectDir := filepath.Join(opts.ProjectRoot, ".claude", "skills")
 	files, loadErrs := loadSkillDir(projectDir)

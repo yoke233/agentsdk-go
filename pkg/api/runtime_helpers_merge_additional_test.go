@@ -11,21 +11,21 @@ import (
 
 func TestMergeSubagentRegistrationsValidatesAndOverrides(t *testing.T) {
 	var errs []error
-	user := []subagents.SubagentRegistration{
-		{
-			Definition: subagents.Definition{Name: "alpha"},
-			Handler: subagents.HandlerFunc(func(context.Context, subagents.Context, subagents.Request) (subagents.Result, error) {
-				return subagents.Result{Output: "user"}, nil
-			}),
-		},
+	manual := []SubagentRegistration{
+		{Definition: subagents.Definition{Name: "alpha"}, Handler: nil},
 		{
 			Definition: subagents.Definition{Name: ""},
 			Handler: subagents.HandlerFunc(func(context.Context, subagents.Context, subagents.Request) (subagents.Result, error) {
 				return subagents.Result{}, nil
 			}),
 		},
+		{
+			Definition: subagents.Definition{Name: "alpha"},
+			Handler: subagents.HandlerFunc(func(context.Context, subagents.Context, subagents.Request) (subagents.Result, error) {
+				return subagents.Result{Output: "manual"}, nil
+			}),
+		},
 	}
-	manual := []SubagentRegistration{{Definition: subagents.Definition{Name: "alpha"}, Handler: nil}}
 	project := []subagents.SubagentRegistration{
 		{
 			Definition: subagents.Definition{Name: "alpha"},
@@ -35,7 +35,7 @@ func TestMergeSubagentRegistrationsValidatesAndOverrides(t *testing.T) {
 		},
 	}
 
-	merged := mergeSubagentRegistrations(user, manual, project, &errs)
+	merged := mergeSubagentRegistrations(manual, project, &errs)
 	if len(errs) != 2 {
 		t.Fatalf("expected two validation errors, got %d", len(errs))
 	}

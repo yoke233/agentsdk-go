@@ -244,6 +244,16 @@ SDK 使用 `.claude/` 目录进行配置，与 Claude Code 兼容：
 └── plugins/          # 插件目录
 ```
 
+### 配置优先级
+
+- 托管策略（最高优先级，例如 `/etc/claude-code/managed-settings.json` 或平台自定义位置）
+- 运行时覆盖（CLI / API 提供的配置）
+- `.claude/settings.local.json`
+- `.claude/settings.json`
+- SDK 内置默认值
+
+`~/.claude` 已不再读取，请将全局配置迁移到项目范围的 `.claude/` 目录；原放在用户主目录的 `settings.json` / `settings.local.json` 需要复制到各项目根目录，确保加载顺序符合预期。
+
 ### 配置示例
 
 ```json

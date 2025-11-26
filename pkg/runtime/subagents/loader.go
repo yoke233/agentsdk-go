@@ -17,8 +17,10 @@ import (
 // LoaderOptions controls how subagents are discovered from the filesystem.
 type LoaderOptions struct {
 	ProjectRoot string
-	UserHome    string
-	EnableUser  bool // whether to scan ~/.claude/agents
+	// Deprecated: user-level scanning has been removed; this field is ignored.
+	UserHome string
+	// Deprecated: user-level scanning has been removed; this flag is ignored.
+	EnableUser bool
 }
 
 // SubagentFile captures an on-disk subagent definition.
@@ -66,31 +68,11 @@ func LoadFromFS(opts LoaderOptions) ([]SubagentRegistration, []error) {
 		merged        = map[string]SubagentFile{}
 	)
 
-	if opts.EnableUser {
-		home := opts.UserHome
-		if home == "" {
-			h, err := os.UserHomeDir()
-			if err != nil {
-				errs = append(errs, fmt.Errorf("subagents: resolve user home: %w", err))
-			} else {
-				home = h
-			}
-		}
-		if home != "" {
-			userDir := filepath.Join(home, ".claude", "agents")
-			files, loadErrs := loadSubagentDir(userDir)
-			errs = append(errs, loadErrs...)
-			for name, file := range files {
-				merged[name] = file
-			}
-		}
-	}
-
 	projectDir := filepath.Join(opts.ProjectRoot, ".claude", "agents")
 	files, loadErrs := loadSubagentDir(projectDir)
 	errs = append(errs, loadErrs...)
 	for name, file := range files {
-		merged[name] = file // project-level overrides user-level
+		merged[name] = file
 	}
 
 	if len(merged) == 0 {

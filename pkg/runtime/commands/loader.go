@@ -28,8 +28,10 @@ var (
 // LoaderOptions controls how commands are discovered from the filesystem.
 type LoaderOptions struct {
 	ProjectRoot string
-	UserHome    string
-	EnableUser  bool // whether to scan the user's ~/.claude directory
+	// Deprecated: user-level scanning has been removed; this field is ignored.
+	UserHome string
+	// Deprecated: user-level scanning has been removed; this flag is ignored.
+	EnableUser bool
 }
 
 // CommandFile captures an on-disk command definition.
@@ -64,31 +66,11 @@ func LoadFromFS(opts LoaderOptions) ([]CommandRegistration, []error) {
 		errs          []error
 	)
 
-	if opts.EnableUser {
-		home := opts.UserHome
-		if home == "" {
-			h, err := os.UserHomeDir()
-			if err != nil {
-				errs = append(errs, fmt.Errorf("commands: resolve user home: %w", err))
-			} else {
-				home = h
-			}
-		}
-		if home != "" {
-			userDir := filepath.Join(home, ".claude", "commands")
-			files, loadErrs := loadCommandDir(userDir)
-			errs = append(errs, loadErrs...)
-			for name, file := range files {
-				merged[name] = file
-			}
-		}
-	}
-
 	projectDir := filepath.Join(opts.ProjectRoot, ".claude", "commands")
 	files, loadErrs := loadCommandDir(projectDir)
 	errs = append(errs, loadErrs...)
 	for name, file := range files {
-		merged[name] = file // project-level overrides user-level
+		merged[name] = file
 	}
 
 	if len(merged) == 0 {

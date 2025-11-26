@@ -5,34 +5,16 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-// Global lock prevents parallel tests from clobbering process-wide environment variables.
-var envMu sync.Mutex
-
-func newIsolatedPaths(t *testing.T) (projectRoot, userPath, projectPath, localPath string) {
+func newIsolatedPaths(t *testing.T) (projectRoot, projectPath, localPath string) {
 	t.Helper()
-
-	envMu.Lock()
-	originalHome := os.Getenv("HOME")
-	home := t.TempDir()
-	require.NoError(t, os.Setenv("HOME", home))
-	t.Cleanup(func() {
-		if originalHome == "" {
-			require.NoError(t, os.Unsetenv("HOME"))
-		} else {
-			require.NoError(t, os.Setenv("HOME", originalHome))
-		}
-		envMu.Unlock()
-	})
 
 	projectRoot = filepath.Join(t.TempDir(), "project")
 	require.NoError(t, os.MkdirAll(projectRoot, 0o755))
-	userPath = getUserSettingsPath()
 	projectPath = getProjectSettingsPath(projectRoot)
 	localPath = getLocalSettingsPath(projectRoot)
 	return
@@ -60,18 +42,17 @@ func loadWithManagedPath(t *testing.T, projectRoot, managedPath string, runtimeO
 func TestSettingsLoader_SingleLayer(t *testing.T) {
 	testCases := []struct {
 		name        string
-		targetLayer func(user, project, local string) string
+		targetLayer func(project, local string) string
 	}{
-		{name: "user only", targetLayer: func(user, _, _ string) string { return user }},
-		{name: "project only", targetLayer: func(_, project, _ string) string { return project }},
-		{name: "local only", targetLayer: func(_, _, local string) string { return local }},
+		{name: "project only", targetLayer: func(project, _ string) string { return project }},
+		{name: "local only", targetLayer: func(_, local string) string { return local }},
 	}
 
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			projectRoot, userPath, projectPath, localPath := newIsolatedPaths(t)
+			projectRoot, projectPath, localPath := newIsolatedPaths(t)
 
 			cfg := Settings{
 				Model:             "claude-3-opus",
@@ -89,7 +70,7 @@ func TestSettingsLoader_SingleLayer(t *testing.T) {
 				EnabledPlugins: map[string]bool{"git@oss": true},
 			}
 
-			writeSettingsFile(t, tc.targetLayer(userPath, projectPath, localPath), cfg)
+			writeSettingsFile(t, tc.targetLayer(projectPath, localPath), cfg)
 
 			loader := SettingsLoader{ProjectRoot: projectRoot}
 			got, err := loader.Load()
@@ -109,16 +90,6 @@ func TestSettingsLoader_SingleLayer(t *testing.T) {
 }
 
 func TestSettingsLoader_MultiLayerMerge(t *testing.T) {
-	userCfg := Settings{
-		Model:             "user-model",
-		CleanupPeriodDays: 60,
-		Env:               map[string]string{"A": "1"},
-		Permissions: &PermissionsConfig{
-			Allow:       []string{"Bash(home:*)"},
-			DefaultMode: "askBeforeRunningTools",
-		},
-		EnabledPlugins: map[string]bool{"alpha@core": true},
-	}
 	projectCfg := Settings{
 		Model:             "project-model",
 		CleanupPeriodDays: 20,
@@ -173,25 +144,9 @@ func TestSettingsLoader_MultiLayerMerge(t *testing.T) {
 		EnabledPlugins: map[string]bool{"alpha@core": true},
 	}
 
-	t.Run("user plus project", func(t *testing.T) {
-		t.Parallel()
-		projectRoot, userPath, projectPath, _ := newIsolatedPaths(t)
-		writeSettingsFile(t, userPath, userCfg)
-		writeSettingsFile(t, projectPath, projectCfg)
-
-		got := loadWithManagedPath(t, projectRoot, "", nil)
-
-		require.Equal(t, "project-model", got.Model)
-		require.Equal(t, map[string]string{"A": "2", "B": "p"}, got.Env)
-		require.Equal(t, []string{"Bash(home:*)", "Bash(proj:*)"}, got.Permissions.Allow)
-		require.Equal(t, []string{"sudo"}, got.Sandbox.ExcludedCommands)
-		require.Equal(t, map[string]bool{"alpha@core": false, "beta@core": true}, got.EnabledPlugins)
-		require.Equal(t, map[string]MarketplaceSource{"oss": {Source: "directory", Path: "/opt/oss"}}, got.ExtraKnownMarketplaces)
-	})
-
 	t.Run("project plus local", func(t *testing.T) {
 		t.Parallel()
-		projectRoot, _, projectPath, localPath := newIsolatedPaths(t)
+		projectRoot, projectPath, localPath := newIsolatedPaths(t)
 		writeSettingsFile(t, projectPath, projectCfg)
 		writeSettingsFile(t, localPath, localCfg)
 
@@ -205,26 +160,26 @@ func TestSettingsLoader_MultiLayerMerge(t *testing.T) {
 		require.Equal(t, map[string]bool{"alpha@core": false, "beta@core": false, "local@oss": true}, got.EnabledPlugins)
 	})
 
-	t.Run("user plus project plus local", func(t *testing.T) {
+	t.Run("project plus runtime overrides", func(t *testing.T) {
 		t.Parallel()
-		projectRoot, userPath, projectPath, localPath := newIsolatedPaths(t)
-		writeSettingsFile(t, userPath, userCfg)
+		projectRoot, projectPath, _ := newIsolatedPaths(t)
 		writeSettingsFile(t, projectPath, projectCfg)
-		writeSettingsFile(t, localPath, localCfg)
 
-		got := loadWithManagedPath(t, projectRoot, "", nil)
+		got := loadWithManagedPath(t, projectRoot, "", runtimeCfg)
 
-		require.Equal(t, "local-model", got.Model)
-		require.Equal(t, map[string]string{"A": "2", "B": "local", "C": "3"}, got.Env)
-		require.Equal(t, []string{"Bash(home:*)", "Bash(proj:*)"}, got.Permissions.Allow)
-		require.Equal(t, []string{"Delete(*)"}, got.Permissions.Deny)
-		require.Equal(t, []string{"/var/run/docker.sock"}, got.Sandbox.Network.AllowUnixSockets)
+		require.Equal(t, "runtime-model", got.Model)
+		require.Equal(t, map[string]string{"A": "2", "B": "p", "C": "runtime"}, got.Env)
+		require.True(t, got.Sandbox != nil && !*got.Sandbox.Enabled)
+		require.Equal(t, map[string]bool{
+			"alpha@core":  false,
+			"beta@core":   true,
+			"runtime@oss": true,
+		}, got.EnabledPlugins)
 	})
 
-	t.Run("full five layers", func(t *testing.T) {
+	t.Run("full four layers", func(t *testing.T) {
 		t.Parallel()
-		projectRoot, userPath, projectPath, localPath := newIsolatedPaths(t)
-		writeSettingsFile(t, userPath, userCfg)
+		projectRoot, projectPath, localPath := newIsolatedPaths(t)
 		writeSettingsFile(t, projectPath, projectCfg)
 		writeSettingsFile(t, localPath, localCfg)
 
@@ -251,7 +206,7 @@ func TestSettingsLoader_MultiLayerMerge(t *testing.T) {
 func TestSettingsLoader_Precedence(t *testing.T) {
 	t.Run("local overrides project", func(t *testing.T) {
 		t.Parallel()
-		projectRoot, _, projectPath, localPath := newIsolatedPaths(t)
+		projectRoot, projectPath, localPath := newIsolatedPaths(t)
 		writeSettingsFile(t, projectPath, Settings{
 			Model: "project",
 			Env:   map[string]string{"PATH": "project"},
@@ -265,10 +220,9 @@ func TestSettingsLoader_Precedence(t *testing.T) {
 		require.Equal(t, "local", got.Env["PATH"])
 	})
 
-	t.Run("project overrides user", func(t *testing.T) {
+	t.Run("project overrides defaults", func(t *testing.T) {
 		t.Parallel()
-		projectRoot, userPath, projectPath, _ := newIsolatedPaths(t)
-		writeSettingsFile(t, userPath, Settings{Model: "user"})
+		projectRoot, projectPath, _ := newIsolatedPaths(t)
 		writeSettingsFile(t, projectPath, Settings{Model: "project"})
 
 		got := loadWithManagedPath(t, projectRoot, "", nil)
@@ -277,8 +231,7 @@ func TestSettingsLoader_Precedence(t *testing.T) {
 
 	t.Run("runtime overrides all", func(t *testing.T) {
 		t.Parallel()
-		projectRoot, userPath, projectPath, localPath := newIsolatedPaths(t)
-		writeSettingsFile(t, userPath, Settings{Model: "user"})
+		projectRoot, projectPath, localPath := newIsolatedPaths(t)
 		writeSettingsFile(t, projectPath, Settings{Model: "project"})
 		writeSettingsFile(t, localPath, Settings{Model: "local"})
 
@@ -288,7 +241,7 @@ func TestSettingsLoader_Precedence(t *testing.T) {
 
 	t.Run("enterprise managed highest", func(t *testing.T) {
 		t.Parallel()
-		projectRoot, _, projectPath, localPath := newIsolatedPaths(t)
+		projectRoot, projectPath, localPath := newIsolatedPaths(t)
 		writeSettingsFile(t, projectPath, Settings{Model: "project"})
 		writeSettingsFile(t, localPath, Settings{Model: "local"})
 		runtimeCfg := &Settings{Model: "runtime"}
@@ -303,30 +256,15 @@ func TestSettingsLoader_Precedence(t *testing.T) {
 
 func TestSettingsLoader_FieldMerging(t *testing.T) {
 	t.Parallel()
-	projectRoot, userPath, projectPath, localPath := newIsolatedPaths(t)
+	projectRoot, projectPath, localPath := newIsolatedPaths(t)
 
-	user := Settings{
-		Model: "user",
-		Permissions: &PermissionsConfig{
-			Allow: []string{"Read(config)", "Write(logs)"},
-			Deny:  []string{"Delete(*)"},
-		},
-		Env: map[string]string{"A": "1"},
-		Sandbox: &SandboxConfig{
-			Enabled:          boolPtr(false),
-			ExcludedCommands: []string{"rm"},
-			Network:          &SandboxNetworkConfig{AllowUnixSockets: []string{"/run/base.sock"}},
-		},
-		EnabledPlugins: map[string]bool{"p@core": true},
-		ExtraKnownMarketplaces: map[string]MarketplaceSource{
-			"oss": {Source: "directory", Path: "/src/oss"},
-		},
-	}
 	project := Settings{
 		Model: "project",
 		Permissions: &PermissionsConfig{
-			Allow: []string{"Write(logs)", "Exec(*)"},
-			Deny:  []string{"Overwrite(root)"},
+			Allow:                        []string{"Write(logs)", "Exec(*)"},
+			Deny:                         []string{"Overwrite(root)"},
+			AdditionalDirectories:        []string{"/data/project"},
+			DisableBypassPermissionsMode: "disable",
 		},
 		Env: map[string]string{"A": "2", "B": "p"},
 		Sandbox: &SandboxConfig{
@@ -337,7 +275,7 @@ func TestSettingsLoader_FieldMerging(t *testing.T) {
 				HTTPProxyPort:    intPtr(8080),
 			},
 		},
-		EnabledPlugins: map[string]bool{"p@core": false, "q@core": true},
+		EnabledPlugins: map[string]bool{"p@core": true, "q@core": true},
 		ExtraKnownMarketplaces: map[string]MarketplaceSource{
 			"internal": {Source: "directory", Path: "/src/internal"},
 		},
@@ -345,14 +283,19 @@ func TestSettingsLoader_FieldMerging(t *testing.T) {
 	local := Settings{
 		Model: "local",
 		Permissions: &PermissionsConfig{
-			Allow: []string{"Debug(*)"},
-			Deny:  []string{"Delete(*)", "Shutdown(*)"},
+			Allow:                 []string{"Debug(*)"},
+			Deny:                  []string{"Shutdown(*)"},
+			AdditionalDirectories: []string{"/data/local"},
+			DefaultMode:           "acceptEdits",
 		},
 		Env: map[string]string{"B": "local"},
 		Sandbox: &SandboxConfig{
-			Enabled:                  boolPtr(false),
 			AutoAllowBashIfSandboxed: boolPtr(false),
 			ExcludedCommands:         []string{"killall"},
+			Network: &SandboxNetworkConfig{
+				AllowUnixSockets: []string{"/run/local.sock"},
+				SocksProxyPort:   intPtr(1080),
+			},
 		},
 		EnabledPlugins: map[string]bool{"p@core": false},
 		ExtraKnownMarketplaces: map[string]MarketplaceSource{
@@ -360,19 +303,23 @@ func TestSettingsLoader_FieldMerging(t *testing.T) {
 		},
 	}
 
-	writeSettingsFile(t, userPath, user)
 	writeSettingsFile(t, projectPath, project)
 	writeSettingsFile(t, localPath, local)
 
 	got := loadWithManagedPath(t, projectRoot, "", nil)
 
-	require.Equal(t, []string{"Read(config)", "Write(logs)", "Exec(*)", "Debug(*)"}, got.Permissions.Allow)
-	require.Equal(t, []string{"Delete(*)", "Overwrite(root)", "Shutdown(*)"}, got.Permissions.Deny)
+	require.Equal(t, []string{"Write(logs)", "Exec(*)", "Debug(*)"}, got.Permissions.Allow)
+	require.Equal(t, []string{"Overwrite(root)", "Shutdown(*)"}, got.Permissions.Deny)
+	require.Equal(t, []string{"/data/project", "/data/local"}, got.Permissions.AdditionalDirectories)
+	require.Equal(t, "acceptEdits", got.Permissions.DefaultMode)
+	require.Equal(t, "disable", got.Permissions.DisableBypassPermissionsMode)
 	require.Equal(t, map[string]string{"A": "2", "B": "local"}, got.Env)
 	require.False(t, *got.Sandbox.AutoAllowBashIfSandboxed)
-	require.False(t, *got.Sandbox.Enabled)
-	require.Equal(t, []string{"/run/base.sock", "/run/docker.sock"}, got.Sandbox.Network.AllowUnixSockets)
+	require.True(t, *got.Sandbox.Enabled)
+	require.Equal(t, []string{"sudo", "killall"}, got.Sandbox.ExcludedCommands)
+	require.Equal(t, []string{"/run/docker.sock", "/run/local.sock"}, got.Sandbox.Network.AllowUnixSockets)
 	require.Equal(t, 8080, *got.Sandbox.Network.HTTPProxyPort)
+	require.Equal(t, 1080, *got.Sandbox.Network.SocksProxyPort)
 	require.Equal(t, map[string]bool{"p@core": false, "q@core": true}, got.EnabledPlugins)
 	require.Equal(t, map[string]MarketplaceSource{
 		"internal": {Source: "directory", Path: "/src/internal"},
@@ -383,7 +330,7 @@ func TestSettingsLoader_FieldMerging(t *testing.T) {
 func TestSettingsLoader_MissingFiles(t *testing.T) {
 	t.Run("all layers missing returns defaults", func(t *testing.T) {
 		t.Parallel()
-		projectRoot, _, _, _ := newIsolatedPaths(t)
+		projectRoot, _, _ := newIsolatedPaths(t)
 
 		got := loadWithManagedPath(t, projectRoot, "", nil)
 		require.Equal(t, 30, got.CleanupPeriodDays)
@@ -395,9 +342,8 @@ func TestSettingsLoader_MissingFiles(t *testing.T) {
 
 	t.Run("partial layers merge correctly", func(t *testing.T) {
 		t.Parallel()
-		projectRoot, userPath, projectPath, _ := newIsolatedPaths(t)
-		writeSettingsFile(t, userPath, Settings{Model: "user", Env: map[string]string{"K": "1"}})
-		writeSettingsFile(t, projectPath, Settings{Model: "project"})
+		projectRoot, projectPath, _ := newIsolatedPaths(t)
+		writeSettingsFile(t, projectPath, Settings{Model: "project", Env: map[string]string{"K": "1"}})
 
 		got := loadWithManagedPath(t, projectRoot, "", nil)
 		require.Equal(t, "project", got.Model)
@@ -409,7 +355,7 @@ func TestSettingsLoader_MissingFiles(t *testing.T) {
 func TestSettingsLoader_InvalidJSON(t *testing.T) {
 	t.Run("invalid json format", func(t *testing.T) {
 		t.Parallel()
-		projectRoot, _, projectPath, _ := newIsolatedPaths(t)
+		projectRoot, projectPath, _ := newIsolatedPaths(t)
 		require.NoError(t, os.MkdirAll(filepath.Dir(projectPath), 0o755))
 		require.NoError(t, os.WriteFile(projectPath, []byte(`{"model":`), 0o600))
 
@@ -421,7 +367,7 @@ func TestSettingsLoader_InvalidJSON(t *testing.T) {
 
 	t.Run("missing required fields reported by validator", func(t *testing.T) {
 		t.Parallel()
-		projectRoot, _, projectPath, _ := newIsolatedPaths(t)
+		projectRoot, projectPath, _ := newIsolatedPaths(t)
 		writeSettingsFile(t, projectPath, Settings{
 			Permissions: &PermissionsConfig{DefaultMode: " "}, // overrides default with blank
 		})
@@ -435,7 +381,7 @@ func TestSettingsLoader_InvalidJSON(t *testing.T) {
 
 	t.Run("type mismatch", func(t *testing.T) {
 		t.Parallel()
-		projectRoot, _, _, localPath := newIsolatedPaths(t)
+		projectRoot, _, localPath := newIsolatedPaths(t)
 		require.NoError(t, os.MkdirAll(filepath.Dir(localPath), 0o755))
 		require.NoError(t, os.WriteFile(localPath, []byte(`{"permissions": "oops"}`), 0o600))
 

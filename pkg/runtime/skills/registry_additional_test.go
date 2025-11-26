@@ -1,6 +1,9 @@
 package skills
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestDefinitionValidateInvalidChar(t *testing.T) {
 	def := Definition{Name: "Bad$Name"}
@@ -36,5 +39,29 @@ func TestNormalizeDefinition(t *testing.T) {
 	}
 	if norm.Metadata["key"] != "value" {
 		t.Fatalf("expected metadata copy, got %v", norm.Metadata)
+	}
+}
+
+func TestSkillHandlerAccessor(t *testing.T) {
+	r := NewRegistry()
+	handler := HandlerFunc(func(context.Context, ActivationContext) (Result, error) { return Result{Output: "ok"}, nil })
+	if err := r.Register(Definition{Name: "demo"}, handler); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	skill, ok := r.Get("demo")
+	if !ok {
+		t.Fatalf("expected skill lookup to succeed")
+	}
+	got := skill.Handler()
+	if got == nil {
+		t.Fatalf("handler accessor returned nil")
+	}
+	if res, err := got.Execute(context.Background(), ActivationContext{Prompt: "ok"}); err != nil || res.Output != "ok" {
+		t.Fatalf("unexpected handler result: %v %#v", err, res)
+	}
+
+	var nilSkill *Skill
+	if nilSkill.Handler() != nil {
+		t.Fatalf("nil skill should return nil handler")
 	}
 }

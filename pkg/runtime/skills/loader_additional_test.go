@@ -153,3 +153,15 @@ func TestLoadSkillDirMissing(t *testing.T) {
 		t.Fatalf("expected nil results and no errors, got %v %v", result, errs)
 	}
 }
+
+func TestSkillBodyLengthVariants(t *testing.T) {
+	if size := skillBodyLength(Result{}); size != 0 {
+		t.Fatalf("expected zero for empty result, got %d", size)
+	}
+	if size := skillBodyLength(Result{Output: map[string]any{"body": []byte("abc")}}); size != 3 {
+		t.Fatalf("expected byte slice length, got %d", size)
+	}
+	if size := skillBodyLength(Result{Output: map[string]any{"body": 123}}); size != 0 {
+		t.Fatalf("expected unsupported body types to return zero, got %d", size)
+	}
+}

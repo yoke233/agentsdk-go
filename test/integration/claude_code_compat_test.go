@@ -4,11 +4,8 @@
 package integration
 
 import (
-	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/cexll/agentsdk-go/pkg/config"
@@ -16,141 +13,159 @@ import (
 	"github.com/cexll/agentsdk-go/pkg/runtime/subagents"
 )
 
-func userHomeOrSkip(t *testing.T) string {
+func writeFile(t *testing.T, path, content string) {
 	t.Helper()
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Skipf("resolve user home: %v", err)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
 	}
-	return home
-}
-
-func ensureDirExistsOrSkip(t *testing.T, dir string) {
-	t.Helper()
-	info, err := os.Stat(dir)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			t.Skipf("%s not found; skipping integration check against real user config", dir)
-		}
-		t.Fatalf("stat %s: %v", dir, err)
-	}
-	if !info.IsDir() {
-		t.Fatalf("%s exists but is not a directory", dir)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
 	}
 }
 
-func ensureFileExistsOrSkip(t *testing.T, path string) {
-	t.Helper()
-	info, err := os.Stat(path)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			t.Skipf("%s not found; skipping integration check against real user config", path)
-		}
-		t.Fatalf("stat %s: %v", path, err)
-	}
-	if info.IsDir() {
-		t.Fatalf("%s is a directory, expected file", path)
-	}
-}
+func TestSettingsLoaderProjectLocalPrecedence(t *testing.T) {
+	projectRoot := t.TempDir()
 
-func TestLoadUserClaudeSkills(t *testing.T) {
-	home := userHomeOrSkip(t)
-	skillsDir := filepath.Join(home, ".claude", "skills")
-	ensureDirExistsOrSkip(t, skillsDir)
+	writeFile(t, filepath.Join(projectRoot, ".claude", "settings.json"), `{
+        "model": "claude-3-opus-latest",
+        "env": {
+            "PROJECT_ONLY": "1",
+            "SHARED": "project"
+        },
+        "permissions": {
+            "allow": ["Bash(ls:*)"],
+            "defaultMode": "plan"
+        }
+    }`)
 
-	opts := skills.LoaderOptions{
-		ProjectRoot: t.TempDir(), // avoid pulling repo .claude state into the check
-		UserHome:    home,
-		EnableUser:  true,
-	}
-	registrations, errs := skills.LoadFromFS(opts)
+	writeFile(t, filepath.Join(projectRoot, ".claude", "settings.local.json"), `{
+        "model": "claude-3-haiku-latest",
+        "env": {
+            "SHARED": "local",
+            "LOCAL_ONLY": "1"
+        },
+        "permissions": {
+            "ask": ["Bash(cat:*)"],
+            "defaultMode": "bypassPermissions"
+        }
+    }`)
 
-	failures := 0
-	for _, err := range errs {
-		failures++
-		t.Logf("WARN: failed to load user skill: %v", err)
-	}
-
-	successes := 0
-	for _, reg := range registrations {
-		if strings.TrimSpace(reg.Definition.Name) == "" {
-			failures++
-			t.Logf("WARN: skill with empty name detected (source: %v)", reg.Definition.Metadata)
-			continue
-		}
-		successes++
-	}
-
-	t.Logf("user skills load summary: success=%d, failed=%d", successes, failures)
-
-	if successes == 0 {
-		if failures == 0 {
-			t.Skipf("no skills found in %s", skillsDir)
-		}
-		t.Fatalf("failed to load any valid user skills from %s", skillsDir)
-	}
-}
-
-func TestLoadUserClaudeAgents(t *testing.T) {
-	home := userHomeOrSkip(t)
-	agentsDir := filepath.Join(home, ".claude", "agents")
-	ensureDirExistsOrSkip(t, agentsDir)
-
-	opts := subagents.LoaderOptions{
-		ProjectRoot: t.TempDir(),
-		UserHome:    home,
-		EnableUser:  true,
-	}
-	registrations, errs := subagents.LoadFromFS(opts)
-
-	failures := 0
-	for _, err := range errs {
-		failures++
-		t.Logf("WARN: failed to load user subagent: %v", err)
-	}
-
-	successes := 0
-	for _, reg := range registrations {
-		if strings.TrimSpace(reg.Definition.Name) == "" {
-			failures++
-			t.Logf("WARN: subagent with empty name detected (source: %v)", reg.Definition.BaseContext.Metadata["source"])
-			continue
-		}
-		successes++
-	}
-
-	t.Logf("user subagents load summary: success=%d, failed=%d", successes, failures)
-
-	if successes == 0 {
-		if failures == 0 {
-			t.Skipf("no subagents found in %s", agentsDir)
-		}
-		t.Skip("all user subagents have parse errors - not a code defect")
-	}
-}
-
-func TestSettingsCompatibility(t *testing.T) {
-	home := userHomeOrSkip(t)
-	settingsPath := filepath.Join(home, ".claude", "settings.json")
-	ensureFileExistsOrSkip(t, settingsPath)
-
-	loader := config.SettingsLoader{ProjectRoot: t.TempDir()}
+	loader := config.SettingsLoader{ProjectRoot: projectRoot}
 	settings, err := loader.Load()
 	if err != nil {
 		t.Fatalf("load settings: %v", err)
 	}
-	if settings == nil {
-		t.Fatalf("settings loader returned nil")
-	}
-	// Some user configs omit model because the app injects it at runtime; seed a safe default
-	// so we can still validate permissions/MCP/hooks compatibility.
-	if strings.TrimSpace(settings.Model) == "" {
-		settings.Model = "claude-3-5-sonnet-20241022"
+
+	if settings.Model != "claude-3-haiku-latest" {
+		t.Fatalf("expected local settings to override model, got %q", settings.Model)
 	}
 
-	if err := config.ValidateSettings(settings); err != nil {
-		t.Fatalf("settings.json incompatible with current schema: %v", err)
+	expectedEnv := map[string]string{
+		"PROJECT_ONLY": "1",
+		"SHARED":       "local",
+		"LOCAL_ONLY":   "1",
+	}
+	if len(settings.Env) != len(expectedEnv) {
+		t.Fatalf("unexpected env size: got %d, want %d", len(settings.Env), len(expectedEnv))
+	}
+	for k, v := range expectedEnv {
+		if settings.Env[k] != v {
+			t.Fatalf("env[%s]=%q, want %q", k, settings.Env[k], v)
+		}
 	}
 
-	t.Logf("settings.json compatible with current schema: %s", settingsPath)
+	if settings.Permissions == nil {
+		t.Fatalf("permissions should be populated")
+	}
+	if settings.Permissions.DefaultMode != "bypassPermissions" {
+		t.Fatalf("expected local defaultMode override, got %q", settings.Permissions.DefaultMode)
+	}
+	if len(settings.Permissions.Allow) != 1 || settings.Permissions.Allow[0] != "Bash(ls:*)" {
+		t.Fatalf("project allow rules not preserved: %+v", settings.Permissions.Allow)
+	}
+	if len(settings.Permissions.Ask) != 1 || settings.Permissions.Ask[0] != "Bash(cat:*)" {
+		t.Fatalf("local ask rules not applied: %+v", settings.Permissions.Ask)
+	}
+}
+
+func TestSkillsLoadProjectOnly(t *testing.T) {
+	projectRoot := t.TempDir()
+	fakeHome := t.TempDir()
+
+	writeFile(t, filepath.Join(projectRoot, ".claude", "skills", "project-skill", "SKILL.md"), `---
+name: project-skill
+description: project scoped skill
+allowed-tools: bash
+---
+# skill body
+`)
+
+	writeFile(t, filepath.Join(fakeHome, ".claude", "skills", "user-skill", "SKILL.md"), `---
+name: user-skill
+description: should be ignored
+allowed-tools: bash
+---
+# user skill
+`)
+
+	opts := skills.LoaderOptions{
+		ProjectRoot: projectRoot,
+		UserHome:    fakeHome,
+		EnableUser:  true,
+	}
+	regs, errs := skills.LoadFromFS(opts)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected skill loader errors: %v", errs)
+	}
+
+	if len(regs) != 1 {
+		t.Fatalf("expected only project skills to load, got %d", len(regs))
+	}
+	if regs[0].Definition.Name != "project-skill" {
+		t.Fatalf("loaded skill %q, want project-skill", regs[0].Definition.Name)
+	}
+}
+
+func TestSubagentLoadProjectOnly(t *testing.T) {
+	projectRoot := t.TempDir()
+	fakeHome := t.TempDir()
+
+	writeFile(t, filepath.Join(projectRoot, ".claude", "agents", "project-agent.md"), `---
+name: project-agent
+description: project scoped agent
+tools: bash
+model: sonnet
+permissionMode: default
+skills: helper
+---
+# body
+`)
+
+	writeFile(t, filepath.Join(fakeHome, ".claude", "agents", "user-agent.md"), `---
+name: user-agent
+description: should be ignored
+tools: bash
+model: sonnet
+permissionMode: default
+skills: helper
+---
+# user agent
+`)
+
+	opts := subagents.LoaderOptions{
+		ProjectRoot: projectRoot,
+		UserHome:    fakeHome,
+		EnableUser:  true,
+	}
+	regs, errs := subagents.LoadFromFS(opts)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected subagent loader errors: %v", errs)
+	}
+
+	if len(regs) != 1 {
+		t.Fatalf("expected only project agents to load, got %d", len(regs))
+	}
+	if regs[0].Definition.Name != "project-agent" {
+		t.Fatalf("loaded agent %q, want project-agent", regs[0].Definition.Name)
+	}
 }

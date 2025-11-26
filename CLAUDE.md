@@ -231,10 +231,10 @@ The SDK follows Claude Code's `.claude/` directory structure:
 
 Configuration precedence (highest → lowest):
 1. Enterprise managed policies
-2. CLI arguments
+2. Runtime overrides (CLI/API-provided)
 3. .claude/settings.local.json
 4. .claude/settings.json
-5. ~/.claude/settings.json
+5. SDK defaults (no ~/.claude lookup)
 
 Example `settings.json` (official schema):
 
