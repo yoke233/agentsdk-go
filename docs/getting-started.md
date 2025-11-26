@@ -1,51 +1,51 @@
-# 入门指南
+# Getting Started
 
-本文档介绍 agentsdk-go 的基本使用方法，包括环境配置、核心概念和常见场景的代码示例。
+This guide walks through the basic usage of agentsdk-go, including environment setup, core concepts, and common code examples.
 
-## 环境要求
+## Environment Requirements
 
-### 必需组件
+### Required
 
-- Go 1.23 或更高版本
-- Git（用于克隆仓库）
+- Go 1.23 or later
+- Git (to clone the repo)
 - Anthropic API Key
 
-### 验证环境
+### Verify
 
 ```bash
-go version  # 应显示 go1.23 或更高版本
+go version  # should show go1.23 or later
 ```
 
-## 安装
+## Installation
 
-### 获取源码
+### Get the Source
 
 ```bash
 git clone https://github.com/cexll/agentsdk-go.git
 cd agentsdk-go
 ```
 
-### 构建验证
+### Build Check
 
 ```bash
-# 构建项目
+# Build the project
 make build
 
-# 运行核心模块测试
+# Run core module tests
 go test ./pkg/agent ./pkg/middleware
 ```
 
-### 配置 API Key
+### Configure API Key
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-## 基础示例
+## Basic Examples
 
-### 最小可运行示例
+### Minimal Runnable Example
 
-创建 `main.go` 文件：
+Create `main.go`:
 
 ```go
 package main
@@ -91,13 +91,13 @@ func main() {
 }
 ```
 
-运行示例：
+Run:
 
 ```bash
 go run main.go
 ```
 
-### 使用 Middleware
+### Using Middleware
 
 ```go
 package main
@@ -158,7 +158,7 @@ func main() {
 }
 ```
 
-### 流式输出
+### Streaming Output
 
 ```go
 package main
@@ -211,25 +211,25 @@ func main() {
 }
 ```
 
-## 核心概念
+## Core Concepts
 
 ### Agent
 
-Agent 是 SDK 的核心组件，负责协调模型调用和工具执行。位于 `pkg/agent/agent.go`。
+The Agent is the core component that orchestrates model calls and tool execution (`pkg/agent/agent.go`).
 
-关键方法：
+Key method:
 
-- `Run(ctx context.Context) (*ModelOutput, error)` - 执行一次完整的 Agent 循环
+- `Run(ctx context.Context) (*ModelOutput, error)` — runs a full agent loop
 
-关键特性：
+Key traits:
 
-- 支持多轮迭代（模型 → 工具 → 模型）
-- 通过 `MaxIterations` 选项限制循环次数
-- 在 6 个拦截点执行 Middleware
+- Supports multi-iteration (model → tools → model)
+- `MaxIterations` limits loop count
+- Middleware executes at 6 hook points
 
 ### Model
 
-Model 接口定义了模型提供者的行为。位于 `pkg/model/interface.go`。
+The Model interface defines provider behavior (`pkg/model/interface.go`):
 
 ```go
 type Model interface {
@@ -237,13 +237,13 @@ type Model interface {
 }
 ```
 
-当前支持的提供者：
+Currently supported provider:
 
-- Anthropic Claude（通过 `AnthropicProvider`）
+- Anthropic Claude (via `AnthropicProvider`)
 
 ### Tool
 
-Tool 是 Agent 可以调用的外部功能。位于 `pkg/tool/tool.go`。
+Tools are external functions the Agent can invoke (`pkg/tool/tool.go`):
 
 ```go
 type Tool interface {
@@ -254,64 +254,60 @@ type Tool interface {
 }
 ```
 
-内置工具（位于 `pkg/tool/builtin/`）：
+Built-ins (`pkg/tool/builtin/`):
 
-- `bash` - 执行 shell 命令
-- `file_read` - 读取文件
-- `file_write` - 写入文件
-- `grep` - 内容搜索
-- `glob` - 文件匹配
+- `bash` — execute shell commands
+- `file_read` — read files
+- `file_write` — write files
+- `grep` — content search
+- `glob` — file globbing
 
 ### Middleware
 
-Middleware 提供 6 个拦截点，允许在请求处理的关键阶段注入自定义逻辑。位于 `pkg/middleware/`。
+Middleware offers 6 interception points to inject custom logic (`pkg/middleware/`):
 
-拦截点：
-
-1. `BeforeAgent` - Agent 执行前
-2. `BeforeModel` - 模型调用前
-3. `AfterModel` - 模型调用后
-4. `BeforeTool` - 工具执行前
-5. `AfterTool` - 工具执行后
-6. `AfterAgent` - Agent 执行后
+1. `BeforeAgent` — before Agent runs
+2. `BeforeModel` — before model call
+3. `AfterModel` — after model call
+4. `BeforeTool` — before tool execution
+5. `AfterTool` — after tool execution
+6. `AfterAgent` — after Agent finishes
 
 ### Context
 
-Context 维护 Agent 执行过程中的状态信息。位于 `pkg/agent/context.go`。
+Context maintains state during Agent execution (`pkg/agent/context.go`):
 
-包含信息：
+- message history
+- tool execution results
+- session metadata
 
-- 消息历史
-- 工具执行结果
-- 会话元数据
+## Configuration
 
-## 配置管理
+### Directory Layout
 
-### 配置文件结构
-
-SDK 使用 `.claude/` 目录管理配置：
+Configuration lives under `.claude/`:
 
 ```
 .claude/
-├── settings.json         # 主配置文件
-├── settings.local.json   # 本地覆盖（已加入 .gitignore）
-├── skills/               # Skills 定义
-├── commands/             # 斜杠命令定义
-├── agents/               # Subagents 定义
-└── plugins/              # 插件目录
+├── settings.json         # main config
+├── settings.local.json   # local overrides (gitignored)
+├── skills/               # skill definitions
+├── commands/             # slash command definitions
+├── agents/               # subagent definitions
+└── plugins/              # plugin directory
 ```
 
-### 配置优先级（高 → 低）
+### Precedence (high → low)
 
-1. 企业托管策略（`/etc/claude-code/managed-settings.json` 等平台路径）
-2. 运行时覆盖（CLI 参数 / API 传入的 `RuntimeOverrides`）
+1. Enterprise managed policies (`/etc/claude-code/managed-settings.json`, etc.)
+2. Runtime overrides (CLI flags / API `RuntimeOverrides`)
 3. `.claude/settings.local.json`
 4. `.claude/settings.json`
-5. SDK 内置默认值
+5. SDK defaults
 
-`~/.claude/` 已不再读取，请将配置放在项目目录内。
+`~/.claude/` is no longer read—keep config in the project.
 
-### settings.json 示例
+### settings.json Example
 
 ```json
 {
@@ -328,7 +324,7 @@ SDK 使用 `.claude/` 目录管理配置：
 }
 ```
 
-### 配置加载
+### Load Config
 
 ```go
 import "github.com/cexll/agentsdk-go/pkg/config"
@@ -344,9 +340,9 @@ if err != nil {
 }
 ```
 
-## Middleware 开发
+## Middleware Development
 
-### 基础 Middleware
+### Basic Middleware
 
 ```go
 loggingMiddleware := middleware.Middleware{
@@ -361,9 +357,9 @@ loggingMiddleware := middleware.Middleware{
 }
 ```
 
-### 状态共享
+### Sharing State
 
-使用 `Meta` 字段在拦截点之间共享数据：
+Use `Meta` to share data across hooks:
 
 ```go
 timingMiddleware := middleware.Middleware{
@@ -380,9 +376,9 @@ timingMiddleware := middleware.Middleware{
 }
 ```
 
-### 错误处理
+### Error Handling
 
-Middleware 返回 error 会中断执行链：
+Returning an error stops the chain:
 
 ```go
 validationMiddleware := middleware.Middleware{
@@ -395,7 +391,7 @@ validationMiddleware := middleware.Middleware{
 }
 ```
 
-### 复杂示例：限流 + 监控
+### Complex Example: Rate Limiting + Monitoring
 
 ```go
 package main
@@ -481,9 +477,9 @@ func min(a, b int) int {
 }
 ```
 
-## 运行示例程序
+## Running Examples
 
-### CLI 示例
+### CLI
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
@@ -491,12 +487,12 @@ cd examples/02-cli
 go run . --session-id demo --settings-path .claude/settings.json
 ```
 
-支持的参数：
+Flags:
 
-- `--session-id` - 指定会话 ID（默认 `SESSION_ID` 环境变量或 `demo-session`）
-- `--settings-path` - 指定 `.claude/settings.json`，启用沙箱/工具配置
+- `--session-id` — session ID (defaults to `SESSION_ID` env or `demo-session`)
+- `--settings-path` — path to `.claude/settings.json` to enable sandbox/tool config
 
-### HTTP 服务器示例
+### HTTP Server
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
@@ -504,165 +500,16 @@ cd examples/03-http
 go run .
 ```
 
-启动后访问：
+Endpoints:
 
-- 健康检查：`http://localhost:8080/health`
-- 同步执行：`POST /v1/run`
-- 流式输出：`POST /v1/run/stream`
+- Health: `http://localhost:8080/health`
+- Sync run: `POST /v1/run`
+- Streaming: `POST /v1/run/stream`
 
-### MCP 客户端示例
+### MCP Client
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 cd examples/mcp
 go run .
 ```
-
-演示如何集成外部 MCP 服务器。
-
-### Middleware 示例
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-cd examples/middleware
-go run .
-```
-
-展示完整的 Middleware 使用场景：日志、限流、监控、安全检查。
-
-## 常见问题
-
-### Agent 提前结束
-
-原因：达到最大迭代次数限制。
-
-解决方案：
-
-```go
-runtime, err := api.New(ctx, api.Options{
-    MaxIterations: 10, // 增加迭代次数限制
-    // ...
-})
-```
-
-### 工具执行失败
-
-原因：工具参数不符合 Schema 定义。
-
-解决方案：
-
-1. 检查工具的 `Schema()` 方法定义
-2. 确保参数类型正确
-3. 检查沙箱路径配置
-
-### Middleware 顺序问题
-
-Middleware 按注册顺序执行。如果存在依赖关系，确保正确的注册顺序：
-
-```go
-runtime, err := api.New(ctx, api.Options{
-    Middleware: []middleware.Middleware{
-        rateLimitMiddleware,  // 先限流
-        loggingMiddleware,    // 后记录
-        monitoringMiddleware, // 最后监控
-    },
-})
-```
-
-### 会话隔离
-
-使用不同的 SessionID 确保会话隔离：
-
-```go
-result1, _ := runtime.Run(ctx, api.Request{
-    Prompt:    "任务 1",
-    SessionID: "session-1", // 独立会话
-})
-
-result2, _ := runtime.Run(ctx, api.Request{
-    Prompt:    "任务 2",
-    SessionID: "session-2", // 另一个独立会话
-})
-```
-
-## 最佳实践
-
-### 错误处理
-
-始终检查错误并提供有用的错误信息：
-
-```go
-result, err := runtime.Run(ctx, api.Request{
-    Prompt:    prompt,
-    SessionID: sessionID,
-})
-if err != nil {
-    log.Printf("执行失败: %v", err)
-    return err
-}
-```
-
-### 资源清理
-
-使用 `defer` 确保资源正确释放：
-
-```go
-runtime, err := api.New(ctx, opts)
-if err != nil {
-    return err
-}
-defer runtime.Close() // 确保清理资源
-```
-
-### 上下文管理
-
-使用带超时的 Context 防止长时间阻塞：
-
-```go
-ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-defer cancel()
-
-result, err := runtime.Run(ctx, api.Request{
-    Prompt:    prompt,
-    SessionID: sessionID,
-})
-```
-
-### 日志记录
-
-在 Middleware 中添加结构化日志：
-
-```go
-loggingMiddleware := middleware.Middleware{
-    BeforeAgent: func(ctx context.Context, req *middleware.AgentRequest) (*middleware.AgentRequest, error) {
-        log.Printf("[request_id=%s] input=%s session=%s",
-            req.RequestID, req.Input, req.SessionID)
-        return req, nil
-    },
-}
-```
-
-### 配置管理
-
-将环境相关配置放入环境变量或配置文件：
-
-```go
-// 从环境变量读取
-apiKey := os.Getenv("ANTHROPIC_API_KEY")
-model := os.Getenv("MODEL_NAME")
-if model == "" {
-    model = "claude-sonnet-4-5" // 默认值
-}
-
-provider := model.NewAnthropicProvider(
-    model.WithAPIKey(apiKey),
-    model.WithModel(model),
-)
-```
-
-## 下一步
-
-- 阅读 [架构文档](architecture.md) 了解系统设计
-- 阅读 [API 参考](api-reference.md) 了解详细 API
-- 阅读 [安全文档](security.md) 了解安全配置
-- 查看 [自定义工具指南](custom-tools-guide.md) 学习工具开发
