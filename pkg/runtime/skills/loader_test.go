@@ -179,7 +179,7 @@ func TestLoadFromFS_ProjectPathNotDirectory(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(skillsPath), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(skillsPath, []byte("not a dir"), 0o644); err != nil {
+	if err := os.WriteFile(skillsPath, []byte("not a dir"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 
