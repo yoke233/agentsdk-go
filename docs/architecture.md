@@ -4,6 +4,20 @@
 >
 > 设计原则：KISS | YAGNI | Never Break Userspace | 大道至简
 
+**文档状态**: 本文档为项目初期的架构设计与调研文档，包含历史调研内容。当前版本 v0.4.0 已实现核心功能。
+
+**v0.4.0 实现状态**:
+- ✅ 核心 Agent 循环 (189 行)
+- ✅ 6 点 Middleware 拦截
+- ✅ 多模型支持 (ModelFactory)
+- ✅ Token 统计 & 自动 Compact
+- ✅ 异步 Bash & DisallowedTools
+- ✅ Rules 配置 (.claude/rules/)
+- ✅ OpenTelemetry & UUID 追踪
+- ✅ MCP 集成 (stdio/SSE)
+- ✅ Hooks 系统 (Shell 命令)
+- ✅ 测试覆盖率 88-96%
+
 ---
 
 ## 目录
@@ -1190,7 +1204,7 @@ if result.Passed {
 // go.mod
 module github.com/你的组织/agentsdk-go
 
-go 1.23
+go 1.24
 
 // 核心包完全零外部依赖
 // 全部使用 Go 标准库:
@@ -1725,7 +1739,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
         with:
-          go-version: '1.23'
+          go-version: '1.24'
 
       - name: Run tests
         run: make test
@@ -1777,7 +1791,7 @@ refactor: 重构
 - **docs/getting-started.md**: 详细教程
 - **docs/api-reference.md**: API 参考
 - **docs/security.md**: 安全指南
-- **docs/deployment.md**: 部署文档
+- **docs/trace-system.md**: 追踪系统文档
 
 ### 8.2 开发者文档
 
