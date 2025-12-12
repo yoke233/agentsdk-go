@@ -12,9 +12,19 @@ agentsdk-go 是一个模块化的 Agent 开发框架，实现了 Claude Code 的
 
 - 核心代码：约 20,300 行（生产代码，不含测试）
 - Agent 核心循环：189 行
-- 测试覆盖率：核心模块平均 90.6%（实际：subagents 91.7%，api 91.0%，mcp 90.3%，model 92.2%，sandbox 90.5%，security 90.4%）
+- 测试覆盖率：核心模块 88-96%（agent 95.7%，model 92.2%，middleware 91.8%，config 90.1%，api 88.8%）
 - 模块数量：13 个独立包
 - 外部依赖：anthropic-sdk-go、fsnotify、gopkg.in/yaml.v3、google/uuid、golang.org/x/mod、golang.org/x/net
+
+### v0.4.0 新增功能
+
+- **多模型支持**：通过 `ModelFactory` 接口实现 Subagent 级别的模型绑定
+- **Token 统计**：全面的 Token 用量追踪与自动累计
+- **自动 Compact**：当 Token 达到阈值时自动压缩上下文
+- **异步 Bash**：后台命令执行与任务管理
+- **Rules 配置**：支持 `.claude/rules/` 目录并支持热重载
+- **OpenTelemetry**：分布式追踪与 span 传播
+- **UUID 追踪**：请求级别的 UUID 用于可观测性
 
 ## 系统架构
 

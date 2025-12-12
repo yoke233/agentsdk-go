@@ -1,10 +1,10 @@
-# Migration Guide: In-Process Hooks ➜ ShellHook (v0.6.0)
+# Migration Guide: In-Process Hooks ➜ ShellHook (v0.4.0)
 
-This guide walks existing users through the breaking Hooks API change introduced on 2025-11-22 (v0.6.0, main). The in-process Go hook interfaces have been removed; hooks now run as shell commands that receive JSON on stdin and signal decisions via exit codes.
+This guide walks existing users through the breaking Hooks API change introduced in v0.4.0. The in-process Go hook interfaces have been removed; hooks now run as shell commands that receive JSON on stdin and signal decisions via exit codes.
 
 ## What Changed
 
-| Area | Old (≤ v0.5.x) | New (v0.6.0) |
+| Area | Old (≤ v0.3.x) | New (v0.4.0) |
 | --- | --- | --- |
 | Hook shape | Go interfaces: `PreToolUse(context.Context, events.ToolUsePayload) error`, `PostToolUse(...)`, `UserPromptSubmit(...)`, `Stop(...)`, `Notification(...)` | Shell commands executed via `/bin/sh -c` with JSON stdin; modeled as `hooks.ShellHook` |
 | Decision channel | Return `error` to veto; no structured decision for PreToolUse | Exit codes: `0=allow`, `1=deny`, `2=ask`, others = failure. PreToolUse may emit JSON permission map on stdout |
@@ -25,7 +25,7 @@ This guide walks existing users through the breaking Hooks API change introduced
 
 ## Before/After Code
 
-**Before (removed in v0.6.0): in-process hook implementation**
+**Before (removed in v0.4.0): in-process hook implementation**
 
 ```go
 // Implemented the typed interfaces and ran inside the agent process.
@@ -133,13 +133,13 @@ Other events populate `tool_response`, `user_prompt`, `notification`, or `stop` 
 
 If a hook returns a non-zero code other than `1` or `2`, the executor treats it as an error and aborts the agent iteration—keep scripts minimal and predictable (KISS/YAGNI).
 
-# Migration Guide: MCP `mcpServers` ➜ `mcp.servers` (v0.6.0)
+# Migration Guide: MCP `mcpServers` ➜ `mcp.servers` (v0.4.0)
 
-This section covers the breaking change that replaces the flat `mcpServers` list with a typed `mcp.servers` map in `.claude/settings.json` (effective 2025-11-22, v0.6.0).
+This section covers the breaking change that replaces the flat `mcpServers` list with a typed `mcp.servers` map in `.claude/settings.json` (effective v0.4.0).
 
 ## What Changed
 
-| Area | Old (≤ v0.5.x) | New (v0.6.0) |
+| Area | Old (≤ v0.3.x) | New (v0.4.0) |
 | --- | --- | --- |
 | Config key | Top-level `mcpServers: []string` holding URLs or `stdio://cmd args` specs | Nested `mcp.servers: {name: MCPServerConfig}` map; names are required |
 | Transport selection | Inferred from string prefix (`http[s]://` = SSE, otherwise stdio); missing fields silently passed through | Explicit `type` (`stdio` defaulted when empty, `http`, or `sse`) plus required fields: `command` for stdio, `url` for http/sse |

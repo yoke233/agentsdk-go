@@ -12,13 +12,28 @@ agentsdk-go is a modular agent development framework that implements Claude Code
 
 - Core code: ~20,300 lines (production code, excluding tests)
 - Agent core loop: 189 lines
-- Test coverage: 90–93% across six core modules; all ≥90% (subagents 91.7%, api 91.0%, mcp 90.3%, model 92.2%, sandbox 90.5%, security 90.4%)
+- Test coverage: 88–96% across core modules (agent 95.7%, model 92.2%, middleware 91.8%, config 90.1%, api 88.8%)
 - Modules: 13 independent packages
 - External dependencies: anthropic-sdk-go, fsnotify, gopkg.in/yaml.v3, google/uuid, golang.org/x/mod, golang.org/x/net
 
 ## Features
 
-- Five-layer example path: `examples/01-basic` (minimal request/response), `examples/02-cli` (interactive REPL), `examples/03-http` (REST + SSE server on :8080), `examples/04-advanced` (full pipeline with middleware, hooks, MCP, sandbox, skills, subagents), `examples/05-custom-tools` (selective built-in tools and custom tool registration)
+### Core Capabilities
+- **Multi-model Support**: Subagent-level model binding via `ModelFactory` interface
+- **Token Statistics**: Comprehensive token usage tracking with automatic accumulation
+- **Auto Compact**: Automatic context compression when token threshold reached
+- **Async Bash**: Background command execution with task management
+- **Rules Configuration**: `.claude/rules/` directory support with hot-reload
+- **OpenTelemetry**: Distributed tracing with span propagation
+- **UUID Tracking**: Request-level UUID for observability
+
+### Examples
+- `examples/01-basic` - Minimal request/response
+- `examples/02-cli` - Interactive REPL with session history
+- `examples/03-http` - REST + SSE server on :8080
+- `examples/04-advanced` - Full pipeline with middleware, hooks, MCP, sandbox, skills, subagents
+- `examples/05-custom-tools` - Selective built-in tools and custom tool registration
+- `examples/05-multimodel` - Multi-model configuration demo
 
 ## System Architecture
 
@@ -277,6 +292,7 @@ The SDK uses the `.claude/` directory for configuration, compatible with Claude 
 .claude/
 ├── settings.json     # Project configuration
 ├── settings.local.json  # Local overrides (gitignored)
+├── rules/            # Rules definitions (markdown)
 ├── skills/           # Skills definitions
 ├── commands/         # Slash command definitions
 ├── agents/           # Subagents definitions
@@ -300,6 +316,7 @@ Configuration precedence (high → low):
     "allow": ["Bash(ls:*)", "Bash(pwd:*)"],
     "deny": ["Read(.env)", "Read(secrets/**)"]
   },
+  "disallowedTools": ["web_search", "web_fetch"],
   "env": {
     "MY_VAR": "value"
   },
@@ -307,6 +324,39 @@ Configuration precedence (high → low):
     "enabled": false
   }
 }
+```
+
+### Token Statistics & Auto Compact
+
+```go
+runtime, err := api.New(ctx, api.Options{
+    ProjectRoot:  ".",
+    ModelFactory: provider,
+    // Token tracking callback
+    OnTokenUsage: func(stats api.TokenStats) {
+        log.Printf("Tokens: input=%d, output=%d, cache_read=%d",
+            stats.InputTokens, stats.OutputTokens, stats.CacheReadTokens)
+    },
+    // Auto compact settings
+    CompactThreshold: 100000, // Trigger compact at 100k tokens
+    CompactModel:     "claude-haiku-4-5", // Use cheaper model for summarization
+})
+```
+
+### Async Bash Execution
+
+```go
+// Start background task
+result, _ := runtime.Run(ctx, api.Request{
+    Prompt:    "Run 'sleep 10 && echo done' in background",
+    SessionID: "demo",
+})
+
+// Later, check task output
+result, _ = runtime.Run(ctx, api.Request{
+    Prompt:    "Get output of background task",
+    SessionID: "demo",
+})
 ```
 
 ## HTTP API
@@ -367,17 +417,18 @@ go tool cover -html=coverage.out
 
 ### Test Coverage
 
-#### Core Modules (all ≥90%)
+#### Core Modules
 
 | Module | Coverage |
 |--------|----------|
-| pkg/runtime/subagents | 91.7% |
-| pkg/api | 91.0% |
-| pkg/mcp | 90.3% |
+| pkg/agent | 95.7% |
 | pkg/model | 92.2% |
-| pkg/sandbox | 90.5% |
-| pkg/security | 90.4% |
-| Average | 90.6% |
+| pkg/middleware | 91.8% |
+| pkg/config | 90.1% |
+| pkg/core/events | 90.4% |
+| pkg/tool | 90.9% |
+| pkg/api | 88.8% |
+| pkg/core/hooks | 88.9% |
 
 ## Build
 
@@ -516,7 +567,7 @@ customMiddleware := middleware.Middleware{
 
 ### KISS (Keep It Simple, Stupid)
 
-- Agent core loop stays at 171 lines
+- Agent core loop stays at 189 lines
 - Single responsibility; each module has a clear role
 - Avoid overdesign and unnecessary abstractions
 
@@ -545,9 +596,9 @@ customMiddleware := middleware.Middleware{
 - [API Reference](docs/api-reference.md) - API documentation
 - [Security](docs/security.md) - Security configuration guide
 - [Custom Tools Guide](docs/custom-tools-guide.md) - Custom tool registration and usage
+- [Trace System](docs/trace-system.md) - OpenTelemetry and HTTP trace setup
+- [Smart Defaults](docs/smart-defaults.md) - Auto-configuration by EntryPoint
 - [HTTP API Guide](examples/03-http/README.md) - HTTP server instructions
-- [Development Plan](.claude/specs/claude-code-rewrite/dev-plan.md) - Architecture plan
-- [Completion Report](.claude/specs/claude-code-rewrite/COMPLETION_REPORT.md) - Implementation report
 
 ## Tech Stack
 

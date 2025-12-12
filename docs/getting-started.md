@@ -6,14 +6,14 @@ This guide walks through the basic usage of agentsdk-go, including environment s
 
 ### Required
 
-- Go 1.23 or later
+- Go 1.24 or later
 - Git (to clone the repo)
 - Anthropic API Key
 
 ### Verify
 
 ```bash
-go version  # should show go1.23 or later
+go version  # should show go1.24 or later
 ```
 
 ## Installation

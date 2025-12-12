@@ -302,6 +302,127 @@ for evt := range eventsCh {
 
 - **Notes**: `Options` require `Model` or `ModelFactory`; missing both returns `ErrMissingModel`. `RunStream` uses an internal goroutine; callers must consume the channel to avoid blocking. `historyStore` is in-memory only. `ToolWhitelist`/`ForceSkills` act at declarative runtime; Agent still iterates all model `ToolCalls`. `SandboxOptions` without `AllowedPaths` default to root-only—overly strict settings cause tool failures.
 
+## v0.4.0 New APIs
+
+### Token Statistics
+
+- `type TokenStats` (`pkg/api/token.go`) tracks token usage across requests: `InputTokens`, `OutputTokens`, `CacheReadTokens`, `CacheCreationTokens`, `TotalTokens`.
+- `type TokenTracker` (`pkg/api/token.go`) accumulates stats across turns with thread-safe access via `Record(stats)` and `GetStats()`.
+- `Options.OnTokenUsage` callback receives `TokenStats` after each model call for real-time monitoring.
+
+```go
+rt, _ := api.New(ctx, api.Options{
+    ModelFactory: provider,
+    OnTokenUsage: func(stats api.TokenStats) {
+        log.Printf("Input: %d, Output: %d, Cache: %d",
+            stats.InputTokens, stats.OutputTokens, stats.CacheReadTokens)
+    },
+})
+```
+
+### Auto Compact
+
+- `type Compactor` (`pkg/api/compact.go`) monitors token usage and triggers context compression when `CompactThreshold` is exceeded.
+- Uses a separate model (`CompactModel`) for summarization to reduce costs.
+- `ShouldCompact(currentTokens)` checks threshold; `Compact(ctx, history)` generates summary.
+
+```go
+rt, _ := api.New(ctx, api.Options{
+    ModelFactory:     provider,
+    CompactThreshold: 100000,              // Trigger at 100k tokens
+    CompactModel:     "claude-haiku-4-5",  // Cheaper model for compression
+})
+```
+
+### Multi-model Support (ModelFactory)
+
+- `Options.ModelFactory` is now `func(ctx context.Context) model.Model` instead of direct `model.Model`.
+- Enables subagent-level model binding where different agents use different models.
+- `model.NewAnthropicProvider(opts...)` returns a provider implementing the factory pattern.
+
+```go
+// Different models for main agent and subagents
+mainProvider := model.NewAnthropicProvider(model.WithModel("claude-sonnet-4-5"))
+haiku := model.NewAnthropicProvider(model.WithModel("claude-haiku-4-5"))
+
+rt, _ := api.New(ctx, api.Options{
+    ModelFactory: mainProvider,
+    Subagents: []api.SubagentRegistration{
+        {Name: "quick-tasks", ModelFactory: haiku},
+    },
+})
+```
+
+### DisallowedTools
+
+- `Options.DisallowedTools []string` blocks specific tools at runtime.
+- Tools in this list are filtered during registration and rejected during execution.
+- Configure via `api.Options` or `.claude/settings.json` (`disallowedTools` array).
+
+```go
+rt, _ := api.New(ctx, api.Options{
+    ModelFactory:     provider,
+    DisallowedTools:  []string{"web_search", "web_fetch"},
+})
+```
+
+### Rules Configuration
+
+- `type RulesLoader` (`pkg/config/rules.go`) loads markdown rules from `.claude/rules/` directory.
+- Supports hot-reload via fsnotify; rules are sorted alphabetically and merged into system prompt.
+- `GetContent()` returns concatenated rules; `WatchChanges()` enables live updates.
+
+```go
+loader := config.NewRulesLoader("/project/.claude/rules")
+rules := loader.GetContent() // "# Rule 1\n...\n# Rule 2\n..."
+loader.WatchChanges()        // Enable hot-reload
+defer loader.Close()
+```
+
+### UUID Tracking
+
+- `Request.RequestID` and `Response.RequestID` provide request-level UUID for observability.
+- Auto-generated if empty; persists through the request lifecycle.
+- Useful for distributed tracing and log correlation.
+
+```go
+resp, _ := rt.Run(ctx, api.Request{
+    Prompt:    "task",
+    RequestID: "custom-uuid-123",  // Or leave empty for auto-generation
+})
+log.Printf("Request %s completed", resp.RequestID)
+```
+
+### OpenTelemetry Integration
+
+- `type Tracer` (`pkg/api/otel.go`) wraps OpenTelemetry spans for agent operations.
+- `Options.TracerProvider` accepts a custom `trace.TracerProvider`.
+- Spans are created for agent runs, model calls, and tool executions.
+
+```go
+import "go.opentelemetry.io/otel"
+
+rt, _ := api.New(ctx, api.Options{
+    ModelFactory:    provider,
+    TracerProvider:  otel.GetTracerProvider(),
+})
+```
+
+### Async Bash
+
+- Bash tool now supports `background: true` parameter for non-blocking execution.
+- Returns a task ID immediately; use `bash_output` tool to retrieve results later.
+- `AsyncTaskManager` (`pkg/tool/builtin/async.go`) manages background tasks with configurable limits.
+
+```go
+// Model can request background execution:
+// {"name": "bash", "params": {"command": "long-running-task", "background": true}}
+// Returns: {"task_id": "abc123"}
+
+// Later, retrieve output:
+// {"name": "bash_output", "params": {"task_id": "abc123"}}
+```
+
 # Completeness
 
 Sections stay within ~300–400 lines, covering core interfaces, signatures, examples, and notes, focusing on `pkg/message`, `pkg/core/events`, and `pkg/middleware` as key API references for the current SDK.
