@@ -1235,6 +1235,7 @@ func builtinToolFactories(root string, sandboxDisabled bool, entry EntryPoint, s
 	factories["bash_output"] = func() tool.Tool { return toolbuiltin.NewBashOutputTool(nil) }
 	factories["kill_task"] = func() tool.Tool { return toolbuiltin.NewKillTaskTool() }
 	factories["todo_write"] = func() tool.Tool { return toolbuiltin.NewTodoWriteTool() }
+	factories["ask_user_question"] = func() tool.Tool { return toolbuiltin.NewAskUserQuestionTool() }
 	factories["skill"] = func() tool.Tool { return toolbuiltin.NewSkillTool(skReg, nil) }
 	factories["slash_command"] = func() tool.Tool { return toolbuiltin.NewSlashCommandTool(cmdExec) }
 
@@ -1256,6 +1257,7 @@ func builtinOrder(entry EntryPoint) []string {
 		"bash_output",
 		"kill_task",
 		"todo_write",
+		"ask_user_question",
 		"skill",
 		"slash_command",
 		"grep",
