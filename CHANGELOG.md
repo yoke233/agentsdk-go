@@ -5,6 +5,57 @@ All notable changes to agentsdk-go will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2025-12-26
+
+### Fixed
+- **Environment Variables Override APIKey (#30)**: Fixed critical bug where `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_API_KEY` environment variables would override explicitly configured `APIKey` in `AnthropicConfig`
+  - Unified priority across `Provider` and direct construction: configured APIKey → `ANTHROPIC_AUTH_TOKEN` → `ANTHROPIC_API_KEY`
+  - Removed duplicate auth injection following KISS principle (`pkg/model/anthropic.go`, `pkg/model/provider.go`)
+  - Enhanced test coverage for APIKey priority and TrimSpace behavior (`pkg/model/anthropic_test.go`)
+- **CI Stability**: Downgraded `golangci-lint-action` from v6 to v4 to avoid schema validation timeout in CI environment
+
+### Changed
+- Single source of truth for auth injection via `requestOptions()` method
+- Consistent behavior across all code paths
+
+### Testing
+- All tests passing ✅
+- Coverage: 92.6% ✅
+- 34 test cases including new priority validation tests
+- Backward compatible for users relying on environment variables only
+
+---
+
+## [0.5.1] - 2025-12-25
+
+### Breaking Changes
+- **Skill Name Validation**: Now strictly enforces lowercase alphanumeric characters and hyphens only
+  - Removed support for underscores in skill names (e.g., `log_summary` → `log-summary`)
+  - Directory scanning limited to one level: `skills/<name>/SKILL.md`
+- **Support File Structure**: Changed from `templates/` to `assets/`, added `references/` directory
+- **Progressive Disclosure**: Support files now return index only, not full content
+
+### Added
+- **Extended SkillMetadata**: Added `license`, `compatibility`, and `metadata` fields
+- **ToolList Type**: Supports both YAML string and sequence formats for flexible tool definitions
+- **Comprehensive Validation**: Full validation for all Agent Skills Specification requirements
+- **100% Specification Compliance**: Fully compliant with Claude Agent Skills Specification
+
+### Improved
+- Test coverage: 90.7% for `pkg/runtime/skills`
+- 49 tests all passing
+- 6 new test cases covering specification edge cases
+- Enhanced error messages with specification guidance
+
+---
+
+## [0.5.0] - 2025-12-24
+
+### Changed
+- **Context Compression**: Updated to use Claude Code official context compression prompt for improved quality and consistency (`pkg/api/compact.go`)
+
+---
+
 ## [0.4.0] - 2025-12-12
 
 ### Added
