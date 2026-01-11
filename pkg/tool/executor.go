@@ -15,8 +15,9 @@ import (
 // Executor wires tool registry lookup with sandbox enforcement.
 // A nil sandbox manager disables enforcement.
 type Executor struct {
-	registry *Registry
-	sandbox  *sandbox.Manager
+	registry  *Registry
+	sandbox   *sandbox.Manager
+	persister *OutputPersister
 }
 
 // NewExecutor constructs an executor backed by the provided registry. When
@@ -75,6 +76,10 @@ func (e *Executor) Execute(ctx context.Context, call Call) (*CallResult, error) 
 	} else {
 		res, execErr = tool.Execute(ctx, params)
 	}
+	if e.persister != nil && res != nil {
+		// MaybePersist errors are logged internally; ignore return value
+		e.persister.MaybePersist(call, res) //nolint:errcheck
+	}
 	cr := &CallResult{
 		Call:        call,
 		Result:      res,
@@ -122,5 +127,17 @@ func (e *Executor) WithSandbox(sb *sandbox.Manager) *Executor {
 	}
 	clone := *e
 	clone.sandbox = sb
+	return &clone
+}
+
+// WithOutputPersister returns a shallow copy using the provided persister.
+func (e *Executor) WithOutputPersister(persister *OutputPersister) *Executor {
+	if e == nil {
+		exec := NewExecutor(nil, nil)
+		exec.persister = persister
+		return exec
+	}
+	clone := *e
+	clone.persister = persister
 	return &clone
 }
