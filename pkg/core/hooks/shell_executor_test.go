@@ -180,16 +180,15 @@ func TestSelectorFiltersToolName(t *testing.T) {
 func TestConcurrentCallsAreIsolated(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	script := writeScript(t, dir, "session_echo.sh", "#!/bin/sh\ncat\n")
-
-	exec := NewExecutor()
-	exec.Register(ShellHook{Event: events.PreToolUse, Command: script})
 
 	sessions := []string{"s1", "s2", "s3"}
 	results := make([]PermissionDecision, len(sessions))
 	wg := sync.WaitGroup{}
 	for i, id := range sessions {
 		i, id := i, id
+		script := writeScript(t, dir, fmt.Sprintf("session_echo_%d.sh", i), "#!/bin/sh\ncat\n")
+		exec := NewExecutor()
+		exec.Register(ShellHook{Event: events.PreToolUse, Command: script})
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
