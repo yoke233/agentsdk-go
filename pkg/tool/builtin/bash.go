@@ -272,7 +272,7 @@ func (b *BashTool) AllowShellMetachars(allow bool) {
 func (b *BashTool) Name() string { return "Bash" }
 
 func (b *BashTool) Description() string {
-	return "Execute validated bash commands inside the agent workspace."
+	return bashDescript
 }
 
 func (b *BashTool) Schema() *tool.JSONSchema { return bashSchema }
