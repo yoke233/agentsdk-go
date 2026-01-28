@@ -1314,6 +1314,7 @@ func builtinToolFactories(root string, sandboxDisabled bool, entry EntryPoint, s
 	factories["task_create"] = func() tool.Tool { return toolbuiltin.NewTaskCreateTool(tasks.NewTaskStore()) }
 	factories["task_list"] = func() tool.Tool { return toolbuiltin.NewTaskListTool(taskStore) }
 	factories["task_get"] = func() tool.Tool { return toolbuiltin.NewTaskGetTool(taskStore) }
+	factories["task_update"] = func() tool.Tool { return toolbuiltin.NewTaskUpdateTool(taskStore) }
 	factories["ask_user_question"] = func() tool.Tool { return toolbuiltin.NewAskUserQuestionTool() }
 	factories["skill"] = func() tool.Tool { return toolbuiltin.NewSkillTool(skReg, nil) }
 	factories["slash_command"] = func() tool.Tool { return toolbuiltin.NewSlashCommandTool(cmdExec) }
@@ -1339,6 +1340,7 @@ func builtinOrder(entry EntryPoint) []string {
 		"task_create",
 		"task_list",
 		"task_get",
+		"task_update",
 		"ask_user_question",
 		"skill",
 		"slash_command",
