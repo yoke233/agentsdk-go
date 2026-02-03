@@ -319,7 +319,10 @@ func (b *BashTool) Execute(ctx context.Context, params map[string]interface{}) (
 			"task_id": id,
 			"status":  "running",
 		}
-		out, _ := json.Marshal(payload)
+		out, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("marshal async result: %w", err)
+		}
 		return &tool.ToolResult{Success: true, Output: string(out), Data: payload}, nil
 	}
 
@@ -454,12 +457,12 @@ func coerceString(value interface{}) (string, error) {
 	switch v := value.(type) {
 	case string:
 		return v, nil
+	case json.Number:
+		return v.String(), nil
 	case fmt.Stringer:
 		return v.String(), nil
 	case []byte:
 		return string(v), nil
-	case json.Number:
-		return v.String(), nil
 	default:
 		return "", fmt.Errorf("expected string got %T", value)
 	}

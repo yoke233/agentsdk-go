@@ -78,7 +78,7 @@ func NewGlobToolWithSandbox(root string, sandbox *security.Sandbox) *GlobTool {
 func (g *GlobTool) SetRespectGitignore(respect bool) {
 	g.respectGitignore = respect
 	if respect && g.gitignoreMatcher == nil {
-		g.gitignoreMatcher, _ = gitignore.NewMatcher(g.root)
+		g.gitignoreMatcher, _ = gitignore.NewMatcher(g.root) //nolint:errcheck // best-effort gitignore
 	}
 }
 
@@ -114,7 +114,7 @@ func (g *GlobTool) Execute(ctx context.Context, params map[string]interface{}) (
 
 	// Initialize gitignore matcher lazily if needed
 	if g.respectGitignore && g.gitignoreMatcher == nil {
-		g.gitignoreMatcher, _ = gitignore.NewMatcher(g.root)
+		g.gitignoreMatcher, _ = gitignore.NewMatcher(g.root) //nolint:errcheck // best-effort gitignore
 	}
 
 	matches, err := filepath.Glob(absPattern)

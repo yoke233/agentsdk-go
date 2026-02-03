@@ -51,14 +51,14 @@ func (k *KillTaskTool) Execute(ctx context.Context, params map[string]interface{
 			"status":  "error",
 			"error":   err.Error(),
 		}
-		out, _ := json.Marshal(payload)
+		out, _ := json.Marshal(payload) //nolint:errcheck // best-effort JSON
 		return &tool.ToolResult{Success: false, Output: string(out), Data: payload}, err
 	}
 	payload := map[string]interface{}{
 		"task_id": id,
 		"status":  "killed",
 	}
-	out, _ := json.Marshal(payload)
+	out, _ := json.Marshal(payload) //nolint:errcheck // best-effort JSON
 	return &tool.ToolResult{Success: true, Output: string(out), Data: payload}, nil
 }
 

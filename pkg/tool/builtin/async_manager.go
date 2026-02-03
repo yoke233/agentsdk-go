@@ -131,7 +131,7 @@ func (m *AsyncTaskManager) startWithContext(ctx context.Context, id, command, wo
 	m.tasks[trimmedID] = task
 	m.mu.Unlock()
 
-	execCtx := ctx
+	var execCtx context.Context
 	var cancel context.CancelFunc
 	if timeout > 0 {
 		execCtx, cancel = context.WithTimeout(ctx, timeout)

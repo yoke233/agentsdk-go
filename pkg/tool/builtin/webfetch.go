@@ -783,12 +783,12 @@ func stringValue(value interface{}) (string, error) {
 	switch v := value.(type) {
 	case string:
 		return v, nil
+	case json.Number:
+		return v.String(), nil
 	case fmt.Stringer:
 		return v.String(), nil
 	case []byte:
 		return string(v), nil
-	case json.Number:
-		return v.String(), nil
 	default:
 		return "", fmt.Errorf("expected string got %T", value)
 	}

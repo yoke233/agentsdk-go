@@ -61,7 +61,10 @@ func (b *BashStatusTool) Execute(ctx context.Context, params map[string]interfac
 		case "failed":
 			payload["error"] = info.Error
 		}
-		out, _ := json.Marshal(payload)
+		out, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("marshal status result: %w", err)
+		}
 		return &tool.ToolResult{Success: true, Output: string(out), Data: payload}, nil
 	}
 

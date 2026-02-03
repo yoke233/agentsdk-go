@@ -280,7 +280,7 @@ func coerceInt(value interface{}) (int, error) {
 		if uint64(v) > uint64(math.MaxInt) {
 			return 0, fmt.Errorf("value %d out of int range", v)
 		}
-		return int(v), nil
+		return int(v), nil //nolint:gosec // overflow checked above
 	case uint8:
 		return int(v), nil
 	case uint16:

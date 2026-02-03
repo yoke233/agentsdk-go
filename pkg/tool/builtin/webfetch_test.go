@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -167,15 +166,6 @@ func TestHtmlToMarkdownFallback(t *testing.T) {
 	if !strings.Contains(got, "Hello* world*") {
 		t.Fatalf("expected formatted sentence, got %q", got)
 	}
-}
-
-func serverHost(t *testing.T, raw string) string {
-	t.Helper()
-	u, err := url.Parse(raw)
-	if err != nil {
-		t.Fatalf("parse server url: %v", err)
-	}
-	return u.Hostname()
 }
 
 func TestWebFetchNormaliseURL(t *testing.T) {

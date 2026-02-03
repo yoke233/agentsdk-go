@@ -136,8 +136,8 @@ func consumeStream(ctx context.Context, r io.ReadCloser, emit func(chunk string,
 			emit(line, isStderr)
 		}
 		if spool != nil {
-			_ = spool.Append(line, isStderr)
-			_ = spool.Append("\n", isStderr)
+			_ = spool.Append(line, isStderr) //nolint:errcheck // best-effort spool
+			_ = spool.Append("\n", isStderr) //nolint:errcheck // best-effort spool
 		}
 		if ctx.Err() != nil {
 			break

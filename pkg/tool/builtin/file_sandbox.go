@@ -93,7 +93,7 @@ func (f *fileSandbox) writeFile(path string, content string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("ensure directory: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := os.WriteFile(path, data, 0o600); err != nil { //nolint:gosec // intentional 0600 for security
 		return fmt.Errorf("write file: %w", err)
 	}
 	return nil
