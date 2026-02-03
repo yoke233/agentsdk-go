@@ -174,14 +174,14 @@ active := trim.Trim(hist.All())
 fmt.Printf("kept %d messages\n", len(active))
 ```
 
-- **Notes**: `History` is in-memory only. `Trimmer.Trim` returns an empty slice when `MaxTokens <= 0`—intentionally fail-closed. LRU eviction happens in API; old `History` pointers still read data but no new messages are written. `CloneMessage` shallow-copies maps; callers must handle nested maps/slices.
+- **Notes**: `History` lives in memory during a process. When `settings.cleanupPeriodDays > 0` (default 30), Runtime persists and reloads per-session history on disk under `.claude/history/`. Set `cleanupPeriodDays` to `0` to disable persistence. `Trimmer.Trim` returns an empty slice when `MaxTokens <= 0`—intentionally fail-closed. LRU eviction happens in API; old `History` pointers still read data but no new messages are written. `CloneMessage` shallow-copies maps; callers must handle nested maps/slices.
 
 ### Session and LRU Semantics
 
 - `historyStore` (`pkg/api/agent.go:849`) maps `session -> *message.History`; the same session always gets the same instance. After eviction, a new `History` is created—old data is unrecoverable.
 - `lastUsed` timestamps update on every `Get`; a coarse `sync.Mutex` favors correctness over max throughput in high concurrency.
 - Default `maxSize` is `api.defaultMaxSessions (1000)`; adjust via `api.WithMaxSessions(n)` (`options.go:149`). `n <= 0` is ignored.
-- For external persistence, call `History.All()` at session end and store results; on restore, use `Replace`. Clone messages first to avoid mutation.
+- For custom persistence (or alternative storage), call `History.All()` at session end and store results; on restore, use `Replace`. Clone messages first to avoid mutation.
 - `History.Replace` / `Reset` are hot paths; trim inputs beforehand (e.g., `Trimmer.Trim`) to avoid token overruns upstream.
 
 ## pkg/core/events — Event Bus and Deduplication
@@ -300,7 +300,7 @@ for evt := range eventsCh {
 - `activationContext` and `applyPromptMetadata` translate `Metadata` keys prefixed `api.*` into prompt prepend/append/override; happens before model invocation.
 - `toolWhitelist` becomes a map passed to tool execution; missing tools are skipped and logged to prevent policy bypass.
 
-- **Notes**: `Options` require `Model` or `ModelFactory`; missing both returns `ErrMissingModel`. `RunStream` uses an internal goroutine; callers must consume the channel to avoid blocking. `historyStore` is in-memory only. `ToolWhitelist`/`ForceSkills` act at declarative runtime; Agent still iterates all model `ToolCalls`. `SandboxOptions` without `AllowedPaths` default to root-only—overly strict settings cause tool failures.
+- **Notes**: `Options` require `Model` or `ModelFactory`; missing both returns `ErrMissingModel`. `RunStream` uses an internal goroutine; callers must consume the channel to avoid blocking. `historyStore` keeps in-memory state and can optionally seed/flush from disk via `settings.cleanupPeriodDays`. `ToolWhitelist`/`ForceSkills` act at declarative runtime; Agent still iterates all model `ToolCalls`. `SandboxOptions` without `AllowedPaths` default to root-only—overly strict settings cause tool failures.
 
 ## Concurrency Model
 

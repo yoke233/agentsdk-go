@@ -11,7 +11,7 @@ import (
 // All optional booleans use *bool so nil means "unset" and caller defaults apply.
 type Settings struct {
 	APIKeyHelper               string                       `json:"apiKeyHelper,omitempty"`               // /bin/sh script that returns an API key for outbound model calls.
-	CleanupPeriodDays          int                          `json:"cleanupPeriodDays,omitempty"`          // Days to retain chat history locally (default 30).
+	CleanupPeriodDays          *int                         `json:"cleanupPeriodDays,omitempty"`          // Days to retain chat history locally (default 30). Set to 0 to disable.
 	CompanyAnnouncements       []string                     `json:"companyAnnouncements,omitempty"`       // Startup announcements rotated randomly.
 	Env                        map[string]string            `json:"env,omitempty"`                        // Environment variables applied to every session.
 	IncludeCoAuthoredBy        *bool                        `json:"includeCoAuthoredBy,omitempty"`        // Whether to append "co-authored-by Claude" to commits/PRs.
@@ -142,10 +142,11 @@ type StatusLineConfig struct {
 
 // GetDefaultSettings returns Anthropic's documented defaults.
 func GetDefaultSettings() Settings {
+	cleanupPeriodDays := 30
 	syncThresholdBytes := 30_000
 	asyncThresholdBytes := 1024 * 1024
 	return Settings{
-		CleanupPeriodDays:   30,
+		CleanupPeriodDays:   intPtr(cleanupPeriodDays),
 		IncludeCoAuthoredBy: boolPtr(true),
 		DisableAllHooks:     boolPtr(false),
 		RespectGitignore:    boolPtr(true),
@@ -193,3 +194,6 @@ func (s *StatusLineConfig) Validate() error { return errors.Join(validateStatusL
 
 // boolPtr helps encode optional booleans.
 func boolPtr(v bool) *bool { return &v }
+
+// intPtr helps encode optional integers.
+func intPtr(v int) *int { return &v }

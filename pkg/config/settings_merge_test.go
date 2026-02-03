@@ -9,7 +9,7 @@ import (
 func TestMergeSettingsDeepCopyAndOverrides(t *testing.T) {
 	lower := &Settings{
 		APIKeyHelper:         "lower-helper",
-		CleanupPeriodDays:    30,
+		CleanupPeriodDays:    intPtr(30),
 		CompanyAnnouncements: []string{"a"},
 		Env:                  map[string]string{"K1": "V1", "shared": "low"},
 		IncludeCoAuthoredBy:  boolPtr(true),
@@ -38,7 +38,7 @@ func TestMergeSettingsDeepCopyAndOverrides(t *testing.T) {
 	}
 
 	higher := &Settings{
-		CleanupPeriodDays:    7,
+		CleanupPeriodDays:    intPtr(7),
 		CompanyAnnouncements: []string{"b", "a"},
 		Env:                  map[string]string{"K2": "V2", "shared": "high"},
 		IncludeCoAuthoredBy:  boolPtr(false),
@@ -69,7 +69,8 @@ func TestMergeSettingsDeepCopyAndOverrides(t *testing.T) {
 	merged := MergeSettings(lower, higher)
 	require.NotNil(t, merged)
 	require.Equal(t, "claude-3-5", merged.Model)
-	require.Equal(t, 7, merged.CleanupPeriodDays)
+	require.NotNil(t, merged.CleanupPeriodDays)
+	require.Equal(t, 7, *merged.CleanupPeriodDays)
 	require.Equal(t, map[string]string{"K1": "V1", "K2": "V2", "shared": "high"}, merged.Env)
 	require.Equal(t, []string{"a", "b"}, merged.CompanyAnnouncements)
 	require.NotSame(t, lower.Env, merged.Env)
@@ -210,5 +211,3 @@ func TestMergeToolOutputDeepCopyAndOverrides(t *testing.T) {
 	require.NotSame(t, lower.ToolOutput, merged.ToolOutput)
 	require.NotSame(t, lower.ToolOutput.PerToolThresholdBytes, merged.ToolOutput.PerToolThresholdBytes)
 }
-
-func intPtr(v int) *int { return &v }

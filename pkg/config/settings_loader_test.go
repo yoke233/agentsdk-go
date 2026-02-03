@@ -52,7 +52,7 @@ func TestSettingsLoader_SingleLayer(t *testing.T) {
 
 			cfg := Settings{
 				Model:             "claude-3-opus",
-				CleanupPeriodDays: 10,
+				CleanupPeriodDays: intPtr(10),
 				Env:               map[string]string{"K": "V"},
 				Permissions: &PermissionsConfig{
 					Allow:       []string{"Bash(ls:*)"},
@@ -73,7 +73,8 @@ func TestSettingsLoader_SingleLayer(t *testing.T) {
 			require.NoError(t, err)
 
 			require.Equal(t, "claude-3-opus", got.Model)
-			require.Equal(t, 10, got.CleanupPeriodDays)
+			require.NotNil(t, got.CleanupPeriodDays)
+			require.Equal(t, 10, *got.CleanupPeriodDays)
 			require.Equal(t, map[string]string{"K": "V"}, got.Env)
 			require.Equal(t, []string{"Bash(ls:*)"}, got.Permissions.Allow)
 			require.Equal(t, "acceptEdits", got.Permissions.DefaultMode)
@@ -88,7 +89,7 @@ func TestSettingsLoader_SingleLayer(t *testing.T) {
 func TestSettingsLoader_MultiLayerMerge(t *testing.T) {
 	projectCfg := Settings{
 		Model:             "project-model",
-		CleanupPeriodDays: 20,
+		CleanupPeriodDays: intPtr(20),
 		Env:               map[string]string{"A": "2", "B": "p"},
 		Permissions: &PermissionsConfig{
 			Allow:       []string{"Bash(home:*)", "Bash(proj:*)"},
@@ -310,7 +311,8 @@ func TestSettingsLoader_MissingFiles(t *testing.T) {
 		projectRoot, _, _ := newIsolatedPaths(t)
 
 		got := loadSettings(t, projectRoot, nil)
-		require.Equal(t, 30, got.CleanupPeriodDays)
+		require.NotNil(t, got.CleanupPeriodDays)
+		require.Equal(t, 30, *got.CleanupPeriodDays)
 		require.True(t, *got.IncludeCoAuthoredBy)
 		require.Equal(t, "askBeforeRunningTools", got.Permissions.DefaultMode)
 		require.False(t, *got.Sandbox.Enabled)

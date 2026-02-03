@@ -8,7 +8,8 @@ import (
 
 func TestGetDefaultSettingsValues(t *testing.T) {
 	cfg := GetDefaultSettings()
-	require.Equal(t, 30, cfg.CleanupPeriodDays)
+	require.NotNil(t, cfg.CleanupPeriodDays)
+	require.Equal(t, 30, *cfg.CleanupPeriodDays)
 	require.True(t, *cfg.IncludeCoAuthoredBy)
 	require.False(t, *cfg.DisableAllHooks)
 	require.NotNil(t, cfg.BashOutput)

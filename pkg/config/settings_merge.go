@@ -25,8 +25,8 @@ func MergeSettings(lower, higher *Settings) *Settings {
 	if higher.APIKeyHelper != "" {
 		result.APIKeyHelper = higher.APIKeyHelper
 	}
-	if higher.CleanupPeriodDays != 0 {
-		result.CleanupPeriodDays = higher.CleanupPeriodDays
+	if higher.CleanupPeriodDays != nil {
+		result.CleanupPeriodDays = intPtr(*higher.CleanupPeriodDays)
 	}
 	result.CompanyAnnouncements = mergeStringSlices(lower.CompanyAnnouncements, higher.CompanyAnnouncements)
 	result.Env = mergeMaps(lower.Env, higher.Env)

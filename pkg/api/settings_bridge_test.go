@@ -49,8 +49,12 @@ func TestLoadSettingsUsesDefaultsWhenProjectConfigMissing(t *testing.T) {
 	if settings == nil {
 		t.Fatal("expected defaults, got nil settings")
 	}
-	if settings.CleanupPeriodDays != 30 {
-		t.Fatalf("expected default cleanup period 30, got %d", settings.CleanupPeriodDays)
+	if settings.CleanupPeriodDays == nil || *settings.CleanupPeriodDays != 30 {
+		got := 0
+		if settings.CleanupPeriodDays != nil {
+			got = *settings.CleanupPeriodDays
+		}
+		t.Fatalf("expected default cleanup period 30, got %d", got)
 	}
 	if settings.Permissions == nil || settings.Permissions.DefaultMode != "askBeforeRunningTools" {
 		t.Fatalf("default permissions not applied: %+v", settings.Permissions)

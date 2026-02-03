@@ -337,6 +337,7 @@ type historyStore struct {
 	lastUsed map[string]time.Time
 	maxSize  int
 	onEvict  func(string)
+	loader   func(string) ([]message.Message, error)
 }
 
 func newHistoryStore(maxSize int) *historyStore {
@@ -365,11 +366,17 @@ func (s *historyStore) Get(id string) *message.History {
 	s.data[id] = hist
 	s.lastUsed[id] = now
 	onEvict := s.onEvict
+	loader := s.loader
 	evicted := ""
 	if len(s.data) > s.maxSize {
 		evicted = s.evictOldest()
 	}
 	s.mu.Unlock()
+	if loader != nil {
+		if loaded, err := loader(id); err == nil && len(loaded) > 0 {
+			hist.Replace(loaded)
+		}
+	}
 	if evicted != "" {
 		cleanupToolOutputSessionDir(evicted) //nolint:errcheck
 		if onEvict != nil {
