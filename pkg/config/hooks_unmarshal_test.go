@@ -210,7 +210,12 @@ func TestHooksConfig_UnmarshalJSON_NewFields(t *testing.T) {
 		"SessionStart": {"*": "echo start"},
 		"SessionEnd": {"*": "echo end"},
 		"SubagentStart": {"worker": "echo sa start"},
-		"SubagentStop": {"worker": "echo sa stop"}
+		"SubagentStop": {"worker": "echo sa stop"},
+		"Stop": {"*": "echo stop"},
+		"Notification": {"*": "echo notify"},
+		"UserPromptSubmit": {"*": "echo prompt"},
+		"PreCompact": {"*": "echo compact"},
+		"PostToolUseFailure": {"bash": "echo failure"}
 	}`
 
 	var got HooksConfig
@@ -221,6 +226,11 @@ func TestHooksConfig_UnmarshalJSON_NewFields(t *testing.T) {
 	require.Equal(t, map[string]string{"*": "echo end"}, got.SessionEnd)
 	require.Equal(t, map[string]string{"worker": "echo sa start"}, got.SubagentStart)
 	require.Equal(t, map[string]string{"worker": "echo sa stop"}, got.SubagentStop)
+	require.Equal(t, map[string]string{"*": "echo stop"}, got.Stop)
+	require.Equal(t, map[string]string{"*": "echo notify"}, got.Notification)
+	require.Equal(t, map[string]string{"*": "echo prompt"}, got.UserPromptSubmit)
+	require.Equal(t, map[string]string{"*": "echo compact"}, got.PreCompact)
+	require.Equal(t, map[string]string{"bash": "echo failure"}, got.PostToolUseFailure)
 }
 
 func TestHooksConfig_UnmarshalJSON_MixedFormat(t *testing.T) {

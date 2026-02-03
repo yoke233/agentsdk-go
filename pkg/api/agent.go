@@ -1064,8 +1064,26 @@ func (t *runtimeToolExecutor) Execute(ctx context.Context, call agent.ToolCall, 
 	if !t.isAllowed(ctx, call.Name) {
 		return agent.ToolResult{}, fmt.Errorf("tool %s is not whitelisted", call.Name)
 	}
+
+	// Helper to append tool result to history
+	appendToolResult := func(content string) {
+		if t.history != nil {
+			t.history.Append(message.Message{
+				Role: "tool",
+				ToolCalls: []message.ToolCall{{
+					ID:     call.ID,
+					Name:   call.Name,
+					Result: content,
+				}},
+			})
+		}
+	}
+
 	if params, err := t.hooks.PreToolUse(ctx, coreToolUsePayload(call)); err != nil {
-		return agent.ToolResult{}, err
+		// Hook denied execution - still need to add tool_result to history
+		errContent := fmt.Sprintf(`{"error":%q}`, err.Error())
+		appendToolResult(errContent)
+		return agent.ToolResult{Name: call.Name, Output: errContent, Metadata: map[string]any{"error": err.Error()}}, err
 	} else if params != nil {
 		call.Input = params
 	}
@@ -1114,20 +1132,12 @@ func (t *runtimeToolExecutor) Execute(ctx context.Context, call agent.ToolCall, 
 	}
 
 	if hookErr := t.hooks.PostToolUse(ctx, coreToolResultPayload(call, result, err)); hookErr != nil && err == nil {
-		// Prefer primary tool error if present; otherwise surface hook failure.
+		// Hook failed - still need to add tool_result to history
+		appendToolResult(content)
 		return toolResult, hookErr
 	}
 
-	if t.history != nil {
-		t.history.Append(message.Message{
-			Role: "tool",
-			ToolCalls: []message.ToolCall{{
-				ID:     call.ID,
-				Name:   call.Name,
-				Result: content,
-			}},
-		})
-	}
+	appendToolResult(content)
 	return toolResult, err
 }
 

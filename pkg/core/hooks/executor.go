@@ -120,6 +120,7 @@ type Executor struct {
 	mw      []middleware.Middleware
 	timeout time.Duration
 	errFn   func(events.EventType, error)
+	workDir string
 
 	defaultCommand string
 }
@@ -152,6 +153,13 @@ func WithErrorHandler(fn func(events.EventType, error)) ExecutorOption {
 func WithCommand(cmd string) ExecutorOption {
 	return func(e *Executor) {
 		e.defaultCommand = strings.TrimSpace(cmd)
+	}
+}
+
+// WithWorkDir sets the working directory for hook command execution.
+func WithWorkDir(dir string) ExecutorOption {
+	return func(e *Executor) {
+		e.workDir = dir
 	}
 }
 
@@ -269,6 +277,9 @@ func (e *Executor) executeHook(ctx context.Context, hook ShellHook, payload []by
 
 	cmd := exec.CommandContext(runCtx, "/bin/sh", "-c", cmdStr)
 	cmd.Env = mergeEnv(os.Environ(), hook.Env)
+	if e.workDir != "" {
+		cmd.Dir = e.workDir
+	}
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -448,7 +459,7 @@ func extractToolName(payload any) string {
 
 func validateEvent(t events.EventType) error {
 	switch t {
-	case events.PreToolUse, events.PostToolUse, events.PreCompact, events.ContextCompacted,
+	case events.PreToolUse, events.PostToolUse, events.PostToolUseFailure, events.PreCompact, events.ContextCompacted,
 		events.Notification, events.UserPromptSubmit,
 		events.SessionStart, events.SessionEnd, events.Stop, events.TokenUsage,
 		events.SubagentStart, events.SubagentStop,

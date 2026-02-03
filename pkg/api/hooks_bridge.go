@@ -9,7 +9,14 @@ import (
 )
 
 func newHookExecutor(opts Options, recorder HookRecorder, settings *config.Settings) *corehooks.Executor {
-	exec := corehooks.NewExecutor(corehooks.WithMiddleware(opts.HookMiddleware...), corehooks.WithTimeout(opts.HookTimeout))
+	execOpts := []corehooks.ExecutorOption{
+		corehooks.WithMiddleware(opts.HookMiddleware...),
+		corehooks.WithTimeout(opts.HookTimeout),
+	}
+	if opts.ProjectRoot != "" {
+		execOpts = append(execOpts, corehooks.WithWorkDir(opts.ProjectRoot))
+	}
+	exec := corehooks.NewExecutor(execOpts...)
 	if len(opts.TypedHooks) > 0 {
 		exec.Register(opts.TypedHooks...)
 	}
@@ -39,34 +46,38 @@ func buildSettingsHooks(settings *config.Settings) []corehooks.ShellHook {
 		env[k] = v
 	}
 
-	addHooks := func(event coreevents.EventType, cmds map[string]string, prefix string) {
-		for matcher, cmd := range cmds {
-			if cmd == "" {
+	addHooks := func(event coreevents.EventType, hookMap map[string]string, prefix string) {
+		for matcher, command := range hookMap {
+			if command == "" {
 				continue
 			}
-			selectorPattern := normalizeToolSelectorPattern(matcher)
-			sel, err := corehooks.NewSelector(selectorPattern, "")
+			normalizedMatcher := normalizeToolSelectorPattern(matcher)
+			sel, err := corehooks.NewSelector(normalizedMatcher, "")
 			if err != nil {
-				// skip invalid selector patterns rather than failing runtime startup
 				continue
 			}
 			hooks = append(hooks, corehooks.ShellHook{
 				Event:    event,
-				Command:  cmd,
+				Command:  command,
 				Selector: sel,
 				Env:      env,
-				Name:     "settings:" + prefix + ":" + matcher,
+				Name:     "settings:" + prefix + ":" + normalizedMatcher,
 			})
 		}
 	}
 
 	addHooks(coreevents.PreToolUse, settings.Hooks.PreToolUse, "pre")
 	addHooks(coreevents.PostToolUse, settings.Hooks.PostToolUse, "post")
+	addHooks(coreevents.PostToolUseFailure, settings.Hooks.PostToolUseFailure, "post_failure")
 	addHooks(coreevents.PermissionRequest, settings.Hooks.PermissionRequest, "permission")
 	addHooks(coreevents.SessionStart, settings.Hooks.SessionStart, "session_start")
 	addHooks(coreevents.SessionEnd, settings.Hooks.SessionEnd, "session_end")
 	addHooks(coreevents.SubagentStart, settings.Hooks.SubagentStart, "subagent_start")
 	addHooks(coreevents.SubagentStop, settings.Hooks.SubagentStop, "subagent_stop")
+	addHooks(coreevents.Stop, settings.Hooks.Stop, "stop")
+	addHooks(coreevents.Notification, settings.Hooks.Notification, "notification")
+	addHooks(coreevents.UserPromptSubmit, settings.Hooks.UserPromptSubmit, "user_prompt")
+	addHooks(coreevents.PreCompact, settings.Hooks.PreCompact, "pre_compact")
 
 	return hooks
 }

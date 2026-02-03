@@ -3,8 +3,10 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"maps"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -655,6 +657,13 @@ func (h *runtimeHookAdapter) PreToolUse(ctx context.Context, evt coreevents.Tool
 	}
 	h.record(coreevents.Event{Type: coreevents.PreToolUse, Payload: evt})
 
+	// Print hook stderr output for debugging
+	for _, res := range results {
+		if res.Stderr != "" {
+			fmt.Fprint(os.Stderr, res.Stderr)
+		}
+	}
+
 	params := evt.Params
 	for _, res := range results {
 		if res.Permission == nil {
@@ -678,10 +687,18 @@ func (h *runtimeHookAdapter) PostToolUse(ctx context.Context, evt coreevents.Too
 	if h == nil || h.executor == nil {
 		return nil
 	}
-	if err := h.executor.Publish(coreevents.Event{Type: coreevents.PostToolUse, Payload: evt}); err != nil {
+	results, err := h.executor.Execute(ctx, coreevents.Event{Type: coreevents.PostToolUse, Payload: evt})
+	if err != nil {
 		return err
 	}
 	h.record(coreevents.Event{Type: coreevents.PostToolUse, Payload: evt})
+
+	// Print hook stderr output for debugging
+	for _, res := range results {
+		if res.Stderr != "" {
+			fmt.Fprint(os.Stderr, res.Stderr)
+		}
+	}
 	return nil
 }
 

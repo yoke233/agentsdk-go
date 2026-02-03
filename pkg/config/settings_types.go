@@ -55,14 +55,22 @@ type PermissionsConfig struct {
 // matcher is applied to the tool name; for subagent-related events it matches
 // the subagent name. Session hooks ignore matcher values other than "*" since
 // there is no name to match.
+//
+// Supports both Claude Code official format (array) and SDK simplified format (map)
+// via custom UnmarshalJSON in hooks_unmarshal.go.
 type HooksConfig struct {
-	PreToolUse        map[string]string `json:"PreToolUse,omitempty"`        // Commands run before specific tools.
-	PostToolUse       map[string]string `json:"PostToolUse,omitempty"`       // Commands run after specific tools.
-	PermissionRequest map[string]string `json:"PermissionRequest,omitempty"` // Commands run when a tool requests permission.
-	SessionStart      map[string]string `json:"SessionStart,omitempty"`      // Commands run when a session starts.
-	SessionEnd        map[string]string `json:"SessionEnd,omitempty"`        // Commands run when a session ends.
-	SubagentStart     map[string]string `json:"SubagentStart,omitempty"`     // Commands run when a subagent starts.
-	SubagentStop      map[string]string `json:"SubagentStop,omitempty"`      // Commands run when a subagent stops.
+	PreToolUse         map[string]string `json:"PreToolUse,omitempty"`         // Commands run before specific tools.
+	PostToolUse        map[string]string `json:"PostToolUse,omitempty"`        // Commands run after specific tools.
+	PostToolUseFailure map[string]string `json:"PostToolUseFailure,omitempty"` // Commands run after tool execution fails.
+	PermissionRequest  map[string]string `json:"PermissionRequest,omitempty"`  // Commands run when a tool requests permission.
+	SessionStart       map[string]string `json:"SessionStart,omitempty"`       // Commands run when a session starts.
+	SessionEnd         map[string]string `json:"SessionEnd,omitempty"`         // Commands run when a session ends.
+	SubagentStart      map[string]string `json:"SubagentStart,omitempty"`      // Commands run when a subagent starts.
+	SubagentStop       map[string]string `json:"SubagentStop,omitempty"`       // Commands run when a subagent stops.
+	Stop               map[string]string `json:"Stop,omitempty"`               // Commands run when agent stops.
+	Notification       map[string]string `json:"Notification,omitempty"`       // Commands run on notifications.
+	UserPromptSubmit   map[string]string `json:"UserPromptSubmit,omitempty"`   // Commands run when user submits a prompt.
+	PreCompact         map[string]string `json:"PreCompact,omitempty"`         // Commands run before context compaction.
 }
 
 // SandboxConfig controls bash sandboxing.

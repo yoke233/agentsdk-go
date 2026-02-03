@@ -486,6 +486,217 @@ func TestDecisionStringer(t *testing.T) {
 	}
 }
 
+func TestBuildPayloadPreCompact(t *testing.T) {
+	t.Parallel()
+	evt := events.Event{
+		Type: events.PreCompact,
+		Payload: events.PreCompactPayload{
+			EstimatedTokens: 5000,
+			TokenLimit:      8000,
+			Threshold:       0.8,
+			PreserveCount:   3,
+		},
+	}
+	raw, err := buildPayload(evt)
+	if err != nil {
+		t.Fatalf("buildPayload: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	block, ok := decoded["pre_compact"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected pre_compact block, got %T", decoded["pre_compact"])
+	}
+	if block["estimated_tokens"] != float64(5000) {
+		t.Fatalf("estimated_tokens mismatch: %v", block["estimated_tokens"])
+	}
+}
+
+func TestBuildPayloadContextCompacted(t *testing.T) {
+	t.Parallel()
+	evt := events.Event{
+		Type: events.ContextCompacted,
+		Payload: events.ContextCompactedPayload{
+			Summary:               "test summary",
+			OriginalMessages:      10,
+			PreservedMessages:     3,
+			EstimatedTokensBefore: 5000,
+			EstimatedTokensAfter:  2000,
+		},
+	}
+	raw, err := buildPayload(evt)
+	if err != nil {
+		t.Fatalf("buildPayload: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	block, ok := decoded["context_compacted"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected context_compacted block, got %T", decoded["context_compacted"])
+	}
+	if block["summary"] != "test summary" {
+		t.Fatalf("summary mismatch: %v", block["summary"])
+	}
+}
+
+func TestBuildPayloadModelSelected(t *testing.T) {
+	t.Parallel()
+	evt := events.Event{
+		Type: events.ModelSelected,
+		Payload: events.ModelSelectedPayload{
+			ToolName:  "Bash",
+			ModelTier: "premium",
+			Reason:    "complex task",
+		},
+	}
+	raw, err := buildPayload(evt)
+	if err != nil {
+		t.Fatalf("buildPayload: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	block, ok := decoded["model_selected"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected model_selected block, got %T", decoded["model_selected"])
+	}
+	if block["ToolName"] != "Bash" {
+		t.Fatalf("ToolName mismatch: %v", block["ToolName"])
+	}
+}
+
+func TestBuildPayloadUserPrompt(t *testing.T) {
+	t.Parallel()
+	evt := events.Event{
+		Type:    events.UserPromptSubmit,
+		Payload: events.UserPromptPayload{Prompt: "test prompt"},
+	}
+	raw, err := buildPayload(evt)
+	if err != nil {
+		t.Fatalf("buildPayload: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	block, ok := decoded["user_prompt"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected user_prompt block, got %T", decoded["user_prompt"])
+	}
+	if block["Prompt"] != "test prompt" {
+		t.Fatalf("Prompt mismatch: %v", block["Prompt"])
+	}
+}
+
+func TestBuildPayloadStop(t *testing.T) {
+	t.Parallel()
+	evt := events.Event{
+		Type:    events.Stop,
+		Payload: events.StopPayload{Reason: "user requested"},
+	}
+	raw, err := buildPayload(evt)
+	if err != nil {
+		t.Fatalf("buildPayload: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	block, ok := decoded["stop"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected stop block, got %T", decoded["stop"])
+	}
+	if block["Reason"] != "user requested" {
+		t.Fatalf("Reason mismatch: %v", block["Reason"])
+	}
+}
+
+func TestBuildPayloadNotification(t *testing.T) {
+	t.Parallel()
+	evt := events.Event{
+		Type:    events.Notification,
+		Payload: events.NotificationPayload{Message: "hello", Meta: map[string]any{"k": "v"}},
+	}
+	raw, err := buildPayload(evt)
+	if err != nil {
+		t.Fatalf("buildPayload: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	block, ok := decoded["notification"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected notification block, got %T", decoded["notification"])
+	}
+	if block["Message"] != "hello" {
+		t.Fatalf("Message mismatch: %v", block["Message"])
+	}
+}
+
+func TestExtractToolNameAllTypes(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		payload  any
+		expected string
+	}{
+		{"ToolUsePayload", events.ToolUsePayload{Name: "Write"}, "Write"},
+		{"ToolResultPayload", events.ToolResultPayload{Name: "Read"}, "Read"},
+		{"SubagentStartPayload", events.SubagentStartPayload{Name: "explorer"}, "explorer"},
+		{"SubagentStopPayload", events.SubagentStopPayload{Name: "reviewer"}, "reviewer"},
+		{"PermissionRequestPayload", events.PermissionRequestPayload{ToolName: "Bash"}, "Bash"},
+		{"Unknown", "unknown", ""},
+		{"Nil", nil, ""},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := extractToolName(tc.payload); got != tc.expected {
+				t.Fatalf("extractToolName(%T) = %q, want %q", tc.payload, got, tc.expected)
+			}
+		})
+	}
+}
+
+func TestNewExecutorZeroTimeout(t *testing.T) {
+	t.Parallel()
+	exec := NewExecutor(WithTimeout(0))
+	if exec.timeout != defaultHookTimeout {
+		t.Fatalf("expected defaultHookTimeout for zero timeout, got %s", exec.timeout)
+	}
+}
+
+func TestSelectorMatchNoToolName(t *testing.T) {
+	t.Parallel()
+	sel, err := NewSelector("Write", "")
+	if err != nil {
+		t.Fatalf("NewSelector: %v", err)
+	}
+	evt := events.Event{Type: events.Notification, Payload: events.NotificationPayload{Message: "hi"}}
+	if sel.Match(evt) {
+		t.Fatalf("expected no match for notification with tool selector")
+	}
+}
+
+func TestSelectorMatchMarshalError(t *testing.T) {
+	t.Parallel()
+	sel, err := NewSelector("", "pattern")
+	if err != nil {
+		t.Fatalf("NewSelector: %v", err)
+	}
+	evt := events.Event{Type: events.PreToolUse, Payload: make(chan int)}
+	if sel.Match(evt) {
+		t.Fatalf("expected no match when payload cannot be marshaled")
+	}
+}
+
 func writeScript(t *testing.T, dir, name, content string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)

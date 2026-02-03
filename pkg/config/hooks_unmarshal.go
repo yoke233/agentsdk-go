@@ -36,11 +36,16 @@ func (h *HooksConfig) UnmarshalJSON(data []byte) error {
 	// Initialize maps so callers can rely on non-nil fields.
 	initMap(&h.PreToolUse)
 	initMap(&h.PostToolUse)
+	initMap(&h.PostToolUseFailure)
 	initMap(&h.PermissionRequest)
 	initMap(&h.SessionStart)
 	initMap(&h.SessionEnd)
 	initMap(&h.SubagentStart)
 	initMap(&h.SubagentStop)
+	initMap(&h.Stop)
+	initMap(&h.Notification)
+	initMap(&h.UserPromptSubmit)
+	initMap(&h.PreCompact)
 
 	fields := []struct {
 		name   string
@@ -48,11 +53,16 @@ func (h *HooksConfig) UnmarshalJSON(data []byte) error {
 	}{
 		{name: "PreToolUse", target: &h.PreToolUse},
 		{name: "PostToolUse", target: &h.PostToolUse},
+		{name: "PostToolUseFailure", target: &h.PostToolUseFailure},
 		{name: "PermissionRequest", target: &h.PermissionRequest},
 		{name: "SessionStart", target: &h.SessionStart},
 		{name: "SessionEnd", target: &h.SessionEnd},
 		{name: "SubagentStart", target: &h.SubagentStart},
 		{name: "SubagentStop", target: &h.SubagentStop},
+		{name: "Stop", target: &h.Stop},
+		{name: "Notification", target: &h.Notification},
+		{name: "UserPromptSubmit", target: &h.UserPromptSubmit},
+		{name: "PreCompact", target: &h.PreCompact},
 	}
 
 	for _, field := range fields {

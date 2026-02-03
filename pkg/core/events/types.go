@@ -11,9 +11,10 @@ import (
 type EventType string
 
 const (
-	PreToolUse        EventType = "PreToolUse"
-	PostToolUse       EventType = "PostToolUse"
-	PreCompact        EventType = "PreCompact"
+	PreToolUse         EventType = "PreToolUse"
+	PostToolUse        EventType = "PostToolUse"
+	PostToolUseFailure EventType = "PostToolUseFailure"
+	PreCompact         EventType = "PreCompact"
 	ContextCompacted  EventType = "ContextCompacted"
 	UserPromptSubmit  EventType = "UserPromptSubmit"
 	SessionStart      EventType = "SessionStart"
