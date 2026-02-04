@@ -211,8 +211,8 @@ func TestCompactorNoSummarizeReturnsNoCompaction(t *testing.T) {
 
 func TestCompactorCompleteSummaryNilContext(t *testing.T) {
 	comp := &compactor{cfg: CompactConfig{Enabled: true}, model: &summaryModel{content: "ok"}}
-	if _, err := comp.completeSummary(nil, model.Request{Messages: []model.Message{{Role: "user", Content: "hi"}}}); err != nil {
-		t.Fatalf("expected summary with nil context, got %v", err)
+	if _, err := comp.completeSummary(context.TODO(), model.Request{Messages: []model.Message{{Role: "user", Content: "hi"}}}); err != nil {
+		t.Fatalf("expected summary with empty context, got %v", err)
 	}
 }
 

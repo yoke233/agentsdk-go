@@ -153,7 +153,7 @@ func TestApprovalQueueWaitResolves(t *testing.T) {
 	go func() {
 		defer close(done)
 		time.Sleep(20 * time.Millisecond)
-		_, _ = q.Approve(rec.ID, "ops", 0)
+		_, _ = q.Approve(rec.ID, "ops", 0) //nolint:errcheck
 	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)

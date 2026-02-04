@@ -28,4 +28,3 @@ func hasError(errs []error, substr string) bool {
 	}
 	return false
 }
-

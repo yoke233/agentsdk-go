@@ -204,9 +204,32 @@ func TestAnthropicHelpers(t *testing.T) {
 	}
 
 	original := map[string]any{"a": []any{map[string]any{"b": 1}}}
-	cloned := cloneValue(original).(map[string]any)
-	original["a"].([]any)[0].(map[string]any)["b"] = 2
-	if cloned["a"].([]any)[0].(map[string]any)["b"].(int) == 2 {
+	cloned, ok := cloneValue(original).(map[string]any)
+	if !ok {
+		t.Fatalf("expected map from clone")
+	}
+	originalA, ok := original["a"].([]any)
+	if !ok {
+		t.Fatalf("expected slice")
+	}
+	originalAMap, ok := originalA[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected map")
+	}
+	originalAMap["b"] = 2
+	clonedA, ok := cloned["a"].([]any)
+	if !ok {
+		t.Fatalf("expected cloned slice")
+	}
+	clonedAMap, ok := clonedA[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected cloned map")
+	}
+	bVal, ok := clonedAMap["b"].(int)
+	if !ok {
+		t.Fatalf("expected int")
+	}
+	if bVal == 2 {
 		t.Fatalf("expected deep clone")
 	}
 

@@ -8,30 +8,30 @@ import (
 // Settings models the full contents of .claude/settings.json.
 // All optional booleans use *bool so nil means "unset" and caller defaults apply.
 type Settings struct {
-	APIKeyHelper               string                       `json:"apiKeyHelper,omitempty"`               // /bin/sh script that returns an API key for outbound model calls.
-	CleanupPeriodDays          *int                         `json:"cleanupPeriodDays,omitempty"`          // Days to retain chat history locally (default 30). Set to 0 to disable.
-	CompanyAnnouncements       []string                     `json:"companyAnnouncements,omitempty"`       // Startup announcements rotated randomly.
-	Env                        map[string]string            `json:"env,omitempty"`                        // Environment variables applied to every session.
-	IncludeCoAuthoredBy        *bool                        `json:"includeCoAuthoredBy,omitempty"`        // Whether to append "co-authored-by Claude" to commits/PRs.
-	Permissions                *PermissionsConfig           `json:"permissions,omitempty"`                // Tool permission rules and defaults.
-	DisallowedTools            []string                     `json:"disallowedTools,omitempty"`            // Tool blacklist; disallowed tools are not registered.
-	Hooks                      *HooksConfig                 `json:"hooks,omitempty"`                      // Hook commands to run around tool execution.
-	DisableAllHooks            *bool                        `json:"disableAllHooks,omitempty"`            // Force-disable all hooks.
-	Model                      string                       `json:"model,omitempty"`                      // Override default model id.
-	StatusLine                 *StatusLineConfig            `json:"statusLine,omitempty"`                 // Custom status line settings.
-	OutputStyle                string                       `json:"outputStyle,omitempty"`                // Optional named output style.
-	MCP                        *MCPConfig                   `json:"mcp,omitempty"`                        // MCP server definitions keyed by name.
-	LegacyMCPServers           []string                     `json:"mcpServers,omitempty"`                 // Deprecated list format; kept for migration errors.
-	ForceLoginMethod           string                       `json:"forceLoginMethod,omitempty"`           // Restrict login to "claudeai" or "console".
-	ForceLoginOrgUUID          string                       `json:"forceLoginOrgUUID,omitempty"`          // Org UUID to auto-select during login when set.
-	Sandbox                    *SandboxConfig               `json:"sandbox,omitempty"`                    // Bash sandbox configuration.
-	BashOutput                 *BashOutputConfig            `json:"bashOutput,omitempty"`                 // Thresholds for spooling bash output to disk.
-	ToolOutput                 *ToolOutputConfig            `json:"toolOutput,omitempty"`                 // Thresholds for persisting large tool outputs to disk.
-	AllowedMcpServers          []MCPServerRule              `json:"allowedMcpServers,omitempty"`          // Managed allowlist of user-configurable MCP servers.
-	DeniedMcpServers           []MCPServerRule              `json:"deniedMcpServers,omitempty"`           // Managed denylist of user-configurable MCP servers.
-	AWSAuthRefresh             string                       `json:"awsAuthRefresh,omitempty"`             // Script to refresh AWS SSO credentials.
-	AWSCredentialExport        string                       `json:"awsCredentialExport,omitempty"`        // Script that prints JSON AWS credentials.
-	RespectGitignore           *bool                        `json:"respectGitignore,omitempty"`           // Whether Glob/Grep tools should respect .gitignore patterns.
+	APIKeyHelper         string             `json:"apiKeyHelper,omitempty"`         // /bin/sh script that returns an API key for outbound model calls.
+	CleanupPeriodDays    *int               `json:"cleanupPeriodDays,omitempty"`    // Days to retain chat history locally (default 30). Set to 0 to disable.
+	CompanyAnnouncements []string           `json:"companyAnnouncements,omitempty"` // Startup announcements rotated randomly.
+	Env                  map[string]string  `json:"env,omitempty"`                  // Environment variables applied to every session.
+	IncludeCoAuthoredBy  *bool              `json:"includeCoAuthoredBy,omitempty"`  // Whether to append "co-authored-by Claude" to commits/PRs.
+	Permissions          *PermissionsConfig `json:"permissions,omitempty"`          // Tool permission rules and defaults.
+	DisallowedTools      []string           `json:"disallowedTools,omitempty"`      // Tool blacklist; disallowed tools are not registered.
+	Hooks                *HooksConfig       `json:"hooks,omitempty"`                // Hook commands to run around tool execution.
+	DisableAllHooks      *bool              `json:"disableAllHooks,omitempty"`      // Force-disable all hooks.
+	Model                string             `json:"model,omitempty"`                // Override default model id.
+	StatusLine           *StatusLineConfig  `json:"statusLine,omitempty"`           // Custom status line settings.
+	OutputStyle          string             `json:"outputStyle,omitempty"`          // Optional named output style.
+	MCP                  *MCPConfig         `json:"mcp,omitempty"`                  // MCP server definitions keyed by name.
+	LegacyMCPServers     []string           `json:"mcpServers,omitempty"`           // Deprecated list format; kept for migration errors.
+	ForceLoginMethod     string             `json:"forceLoginMethod,omitempty"`     // Restrict login to "claudeai" or "console".
+	ForceLoginOrgUUID    string             `json:"forceLoginOrgUUID,omitempty"`    // Org UUID to auto-select during login when set.
+	Sandbox              *SandboxConfig     `json:"sandbox,omitempty"`              // Bash sandbox configuration.
+	BashOutput           *BashOutputConfig  `json:"bashOutput,omitempty"`           // Thresholds for spooling bash output to disk.
+	ToolOutput           *ToolOutputConfig  `json:"toolOutput,omitempty"`           // Thresholds for persisting large tool outputs to disk.
+	AllowedMcpServers    []MCPServerRule    `json:"allowedMcpServers,omitempty"`    // Managed allowlist of user-configurable MCP servers.
+	DeniedMcpServers     []MCPServerRule    `json:"deniedMcpServers,omitempty"`     // Managed denylist of user-configurable MCP servers.
+	AWSAuthRefresh       string             `json:"awsAuthRefresh,omitempty"`       // Script to refresh AWS SSO credentials.
+	AWSCredentialExport  string             `json:"awsCredentialExport,omitempty"`  // Script that prints JSON AWS credentials.
+	RespectGitignore     *bool              `json:"respectGitignore,omitempty"`     // Whether Glob/Grep tools should respect .gitignore patterns.
 }
 
 // PermissionsConfig defines per-tool permission rules.

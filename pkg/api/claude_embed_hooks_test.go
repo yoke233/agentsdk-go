@@ -34,7 +34,10 @@ func TestMaterializeEmbeddedClaudeHooks(t *testing.T) {
 	if err := materializeEmbeddedClaudeHooks(root, fs); err != nil {
 		t.Fatalf("materialize second failed: %v", err)
 	}
-	data, _ = os.ReadFile(dest)
+	data, err = os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("read dest: %v", err)
+	}
 	if string(data) != "local" {
 		t.Fatalf("expected local file preserved")
 	}

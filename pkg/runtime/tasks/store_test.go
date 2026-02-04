@@ -240,7 +240,6 @@ func (r repeatReader) Read(p []byte) (int, error) {
 	return len(p), nil
 }
 
-
 func TestTaskStoreRemoveDependencyUnblocks(t *testing.T) {
 	var store TaskStore
 

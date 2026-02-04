@@ -48,7 +48,10 @@ func TestHeaderRoundTripper(t *testing.T) {
 		base:    base,
 		headers: http.Header{"X-Test": []string{"new"}},
 	}
-	req, _ := http.NewRequest(http.MethodGet, "http://example.com", nil)
+	req, err := http.NewRequest(http.MethodGet, "http://example.com", nil)
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
 	req.Header.Set("X-Test", "old")
 	if _, err := rt.RoundTrip(req); err != nil {
 		t.Fatalf("round trip failed: %v", err)

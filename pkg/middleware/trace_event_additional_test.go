@@ -10,11 +10,11 @@ import (
 )
 
 type requestPayload struct {
-	Messages []string
-	Tools    []string
-	System   string
-	MaxTokens int
-	Model    string
+	Messages    []string
+	Tools       []string
+	System      string
+	MaxTokens   int
+	Model       string
 	Temperature float64
 }
 
@@ -26,8 +26,8 @@ type toolResultStruct struct {
 
 func TestTracePayloadBuilders(t *testing.T) {
 	req := model.Request{
-		Messages: []model.Message{{Role: "user", Content: "hi"}},
-		Model:    "m",
+		Messages:  []model.Message{{Role: "user", Content: "hi"}},
+		Model:     "m",
 		MaxTokens: 5,
 	}
 	if payload := modelRequestPayload(req); payload == nil || payload["model"] == nil {

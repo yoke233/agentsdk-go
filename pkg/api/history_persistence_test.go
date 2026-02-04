@@ -30,7 +30,10 @@ func TestDiskHistoryPersisterSaveLoadAndCleanup(t *testing.T) {
 	}
 
 	legacy := []message.Message{{Role: "assistant", Content: "ok"}}
-	data, _ := json.Marshal(legacy)
+	data, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
 	legacyPath := p.filePath("legacy")
 	if err := os.WriteFile(legacyPath, data, 0o600); err != nil {
 		t.Fatalf("write legacy: %v", err)
@@ -184,7 +187,7 @@ func TestDiskHistoryPersisterSaveCreateTempError(t *testing.T) {
 	if err := os.Chmod(p.dir, 0o500); err != nil {
 		t.Fatalf("chmod: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(p.dir, 0o700) })
+	t.Cleanup(func() { _ = os.Chmod(p.dir, 0o700) }) //nolint:errcheck
 
 	if err := p.Save("sess", []message.Message{{Role: "user", Content: "hi"}}); err == nil {
 		t.Fatalf("expected create temp error")

@@ -30,7 +30,7 @@ var newMCPClient = func(ctx context.Context, spec string, handler mcpListChanged
 	return connectMCPClientWithOptions(ctx, spec, MCPServerOptions{}, handler)
 }
 
-var buildMCPTransport = mcp.BuildSessionTransport
+var buildMCPTransport = mcp.BuildSessionTransport //nolint:staticcheck // TODO: migrate to ConnectSession
 
 type MCPServerOptions struct {
 	Headers map[string]string

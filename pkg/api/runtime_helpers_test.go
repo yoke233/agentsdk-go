@@ -29,7 +29,9 @@ func TestAvailableToolsAndSchemaToMap(t *testing.T) {
 	t.Parallel()
 
 	reg := tool.NewRegistry()
-	_ = reg.Register(&helperStubTool{name: "Bash"})
+	if err := reg.Register(&helperStubTool{name: "Bash"}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
 	defs := availableTools(reg, map[string]struct{}{"bash": {}})
 	if len(defs) != 1 || defs[0].Name != "Bash" {
 		t.Fatalf("unexpected tool defs %v", defs)

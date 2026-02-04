@@ -38,9 +38,9 @@ func TestOptionsFrozenCopiesSlices(t *testing.T) {
 	t.Parallel()
 
 	opts := Options{
-		Middleware:         []middleware.Middleware{nil},
+		Middleware:          []middleware.Middleware{nil},
 		EnabledBuiltinTools: []string{"bash"},
-		DisallowedTools:    []string{"read"},
+		DisallowedTools:     []string{"read"},
 		Sandbox: SandboxOptions{
 			AllowedPaths: []string{"/tmp"},
 		},

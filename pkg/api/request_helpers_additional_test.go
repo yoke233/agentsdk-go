@@ -110,9 +110,11 @@ func TestRequestHelperUtilities(t *testing.T) {
 	}
 
 	reg := skills.NewRegistry()
-	_ = reg.Register(skills.Definition{Name: "demo"}, skills.HandlerFunc(func(ctx context.Context, ac skills.ActivationContext) (skills.Result, error) {
+	if err := reg.Register(skills.Definition{Name: "demo"}, skills.HandlerFunc(func(ctx context.Context, ac skills.ActivationContext) (skills.Result, error) {
 		return skills.Result{Output: "ok"}, nil
-	}))
+	})); err != nil {
+		t.Fatalf("register: %v", err)
+	}
 	if got := orderedForcedSkills(nil, []string{"demo"}); got != nil {
 		t.Fatalf("expected nil with nil registry")
 	}

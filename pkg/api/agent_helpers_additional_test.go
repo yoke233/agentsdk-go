@@ -29,14 +29,14 @@ func (s agentHelperStubTool) Execute(context.Context, map[string]interface{}) (*
 }
 
 func TestStreamEmitContextHelpers(t *testing.T) {
-	if streamEmitFromContext(nil) != nil {
-		t.Fatalf("expected nil emit from nil context")
+	if streamEmitFromContext(context.TODO()) != nil {
+		t.Fatalf("expected nil emit from empty context")
 	}
 	ctx := withStreamEmit(context.Background(), func(context.Context, StreamEvent) {})
 	if streamEmitFromContext(ctx) == nil {
 		t.Fatalf("expected emit func from context")
 	}
-	if got := withStreamEmit(nil, nil); got == nil {
+	if got := withStreamEmit(context.TODO(), nil); got == nil {
 		t.Fatalf("expected non-nil context")
 	}
 }

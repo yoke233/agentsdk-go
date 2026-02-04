@@ -34,21 +34,28 @@ func TestTraceHelpersAndRender(t *testing.T) {
 	}
 
 	raw := json.RawMessage(`{"a":1}`)
-	copied := sanitizePayload(raw).(json.RawMessage)
+	sanitized := sanitizePayload(raw)
+	copied, ok := sanitized.(json.RawMessage)
+	if !ok {
+		t.Fatalf("expected json.RawMessage")
+	}
 	raw[0] = 'x'
 	if copied[0] == 'x' {
 		t.Fatalf("expected raw message copy")
 	}
-	if got := sanitizePayload(errors.New("boom")).(string); got != "boom" {
+	errPayload := sanitizePayload(errors.New("boom"))
+	if got, ok := errPayload.(string); !ok || got != "boom" {
 		t.Fatalf("unexpected error payload %q", got)
 	}
 	if _, ok := sanitizePayload([]byte(`{"ok":true}`)).(json.RawMessage); !ok {
 		t.Fatalf("expected json raw message")
 	}
-	if got := sanitizePayload([]byte("plain")).(string); got != "plain" {
+	bytePayload := sanitizePayload([]byte("plain"))
+	if got, ok := bytePayload.(string); !ok || got != "plain" {
 		t.Fatalf("unexpected byte payload %q", got)
 	}
-	if got := sanitizePayload(func() {}).(string); !strings.HasPrefix(got, "<non-serializable") {
+	funcPayload := sanitizePayload(func() {})
+	if got, ok := funcPayload.(string); !ok || !strings.HasPrefix(got, "<non-serializable") {
 		t.Fatalf("unexpected non-serializable payload %q", got)
 	}
 
@@ -105,7 +112,7 @@ func TestResolveSessionIDFallbacks(t *testing.T) {
 	if id := tm.resolveSessionID(context.Background(), st); id != "sid" {
 		t.Fatalf("expected sessionID value, got %q", id)
 	}
-	if id := tm.resolveSessionID(nil, nil); !strings.HasPrefix(id, "session-") {
+	if id := tm.resolveSessionID(context.TODO(), nil); !strings.HasPrefix(id, "session-") {
 		t.Fatalf("expected generated session id, got %q", id)
 	}
 }

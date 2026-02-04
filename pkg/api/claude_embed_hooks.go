@@ -66,7 +66,7 @@ func materializeEmbeddedClaudeHooks(projectRoot string, embedFS fs.FS) error {
 		}
 
 		tmp := dest + ".tmp"
-		if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		if err := os.WriteFile(tmp, data, 0o600); err != nil {
 			return fmt.Errorf("write %s: %w", tmp, err)
 		}
 		if err := os.Rename(tmp, dest); err != nil {
@@ -80,4 +80,3 @@ func materializeEmbeddedClaudeHooks(projectRoot string, embedFS fs.FS) error {
 		return nil
 	})
 }
-
