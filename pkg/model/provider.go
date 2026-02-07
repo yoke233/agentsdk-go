@@ -42,11 +42,22 @@ type AnthropicProvider struct {
 	expires time.Time
 }
 
-// Model implements Provider with caching.
+// Model implements Provider with caching using double-checked locking.
 func (p *AnthropicProvider) Model(ctx context.Context) (Model, error) {
+	// Fast path: check cache with read lock
 	if mdl := p.cachedModel(); mdl != nil {
 		return mdl, nil
 	}
+
+	// Slow path: acquire write lock and double-check
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Double-check: another goroutine may have populated the cache
+	if p.cached != nil && (p.CacheTTL <= 0 || time.Now().Before(p.expires)) {
+		return p.cached, nil
+	}
+
 	mdl, err := NewAnthropic(AnthropicConfig{
 		APIKey:      p.resolveAPIKey(),
 		BaseURL:     strings.TrimSpace(p.BaseURL),
@@ -59,7 +70,12 @@ func (p *AnthropicProvider) Model(ctx context.Context) (Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	p.store(mdl)
+
+	// Store under the lock we already hold
+	if p.CacheTTL > 0 {
+		p.cached = mdl
+		p.expires = time.Now().Add(p.CacheTTL)
+	}
 	return mdl, nil
 }
 
@@ -96,6 +112,81 @@ func (p *AnthropicProvider) store(m Model) {
 	defer p.mu.Unlock()
 	p.cached = m
 	p.expires = time.Now().Add(p.CacheTTL)
+}
+
+// OpenAIProvider caches OpenAI clients with optional TTL.
+type OpenAIProvider struct {
+	APIKey      string
+	BaseURL     string // Optional: for Azure or proxies
+	ModelName   string
+	MaxTokens   int
+	MaxRetries  int
+	System      string
+	Temperature *float64
+	CacheTTL    time.Duration
+
+	mu      sync.RWMutex
+	cached  Model
+	expires time.Time
+}
+
+// Model implements Provider with caching using double-checked locking.
+func (p *OpenAIProvider) Model(ctx context.Context) (Model, error) {
+	// Fast path: check cache with read lock
+	if mdl := p.cachedModel(); mdl != nil {
+		return mdl, nil
+	}
+
+	// Slow path: acquire write lock and double-check
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Double-check: another goroutine may have populated the cache
+	if p.cached != nil && (p.CacheTTL <= 0 || time.Now().Before(p.expires)) {
+		return p.cached, nil
+	}
+
+	mdl, err := NewOpenAI(OpenAIConfig{
+		APIKey:      p.resolveAPIKey(),
+		BaseURL:     strings.TrimSpace(p.BaseURL),
+		Model:       strings.TrimSpace(p.ModelName),
+		MaxTokens:   p.MaxTokens,
+		MaxRetries:  p.MaxRetries,
+		System:      p.System,
+		Temperature: p.Temperature,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Store under the lock we already hold
+	if p.CacheTTL > 0 {
+		p.cached = mdl
+		p.expires = time.Now().Add(p.CacheTTL)
+	}
+	return mdl, nil
+}
+
+func (p *OpenAIProvider) resolveAPIKey() string {
+	if key := strings.TrimSpace(p.APIKey); key != "" {
+		return key
+	}
+	if key := strings.TrimSpace(os.Getenv("OPENAI_API_KEY")); key != "" {
+		return key
+	}
+	return ""
+}
+
+func (p *OpenAIProvider) cachedModel() Model {
+	if p.CacheTTL <= 0 {
+		return nil
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.cached == nil || time.Now().After(p.expires) {
+		return nil
+	}
+	return p.cached
 }
 
 // MustProvider materialises a model immediately and panics on failure.

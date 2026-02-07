@@ -40,3 +40,4 @@ tools.json
 .gomodcache
 .swe-agent
 .trace
+trace-out/
