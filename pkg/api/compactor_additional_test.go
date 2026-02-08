@@ -33,7 +33,7 @@ func (m *summaryModel) Complete(ctx context.Context, req model.Request) (*model.
 }
 
 func (m *summaryModel) CompleteStream(_ context.Context, req model.Request, cb model.StreamHandler) error {
-	resp, err := m.Complete(nil, req)
+	resp, err := m.Complete(context.Background(), req)
 	if err != nil {
 		return err
 	}

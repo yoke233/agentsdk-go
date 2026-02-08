@@ -639,7 +639,7 @@ func (s *stubModel) Complete(_ context.Context, req model.Request) (*model.Respo
 }
 
 func (s *stubModel) CompleteStream(_ context.Context, req model.Request, cb model.StreamHandler) error {
-	resp, err := s.Complete(nil, req)
+	resp, err := s.Complete(context.Background(), req)
 	if err != nil {
 		return err
 	}

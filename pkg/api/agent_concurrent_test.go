@@ -133,7 +133,7 @@ func (m staticOKModel) Complete(context.Context, model.Request) (*model.Response
 }
 
 func (m staticOKModel) CompleteStream(_ context.Context, req model.Request, cb model.StreamHandler) error {
-	resp, err := m.Complete(nil, req)
+	resp, err := m.Complete(context.Background(), req)
 	if err != nil {
 		return err
 	}
