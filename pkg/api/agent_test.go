@@ -638,8 +638,12 @@ func (s *stubModel) Complete(_ context.Context, req model.Request) (*model.Respo
 	return resp, nil
 }
 
-func (s *stubModel) CompleteStream(context.Context, model.Request, model.StreamHandler) error {
-	return errors.New("stream not supported")
+func (s *stubModel) CompleteStream(_ context.Context, req model.Request, cb model.StreamHandler) error {
+	resp, err := s.Complete(nil, req)
+	if err != nil {
+		return err
+	}
+	return cb(model.StreamResult{Final: true, Response: resp})
 }
 
 type echoTool struct {

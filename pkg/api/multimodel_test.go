@@ -20,7 +20,11 @@ func (m *mockModel) Complete(ctx context.Context, req model.Request) (*model.Res
 }
 
 func (m *mockModel) CompleteStream(ctx context.Context, req model.Request, cb model.StreamHandler) error {
-	return nil
+	resp, err := m.Complete(ctx, req)
+	if err != nil {
+		return err
+	}
+	return cb(model.StreamResult{Final: true, Response: resp})
 }
 
 func TestModelTierConstants(t *testing.T) {

@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -20,8 +19,12 @@ func (m staticModel) Complete(context.Context, model.Request) (*model.Response, 
 	return &model.Response{Message: model.Message{Role: "assistant", Content: m.content}}, nil
 }
 
-func (staticModel) CompleteStream(context.Context, model.Request, model.StreamHandler) error {
-	return errors.New("stream not supported")
+func (m staticModel) CompleteStream(_ context.Context, req model.Request, cb model.StreamHandler) error {
+	resp, err := m.Complete(nil, req)
+	if err != nil {
+		return err
+	}
+	return cb(model.StreamResult{Final: true, Response: resp})
 }
 
 func boolPtr(v bool) *bool { return &v }

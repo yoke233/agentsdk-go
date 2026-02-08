@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 
 	"github.com/cexll/agentsdk-go/pkg/api"
 	"github.com/cexll/agentsdk-go/pkg/model"
@@ -32,17 +31,11 @@ func (t *EchoTool) Execute(ctx context.Context, params map[string]any) (*tool.To
 func main() {
 	ctx := context.Background()
 
-	provider, err := model.NewAnthropic(model.AnthropicConfig{
-		APIKey: os.Getenv("ANTHROPIC_API_KEY"),
-		Model:  "claude-sonnet-4-5",
-	})
-	if err != nil {
-		log.Fatalf("build model provider: %v", err)
-	}
+	provider := &model.AnthropicProvider{ModelName: "claude-sonnet-4-5-20250929"}
 
 	rt, err := api.New(ctx, api.Options{
 		ProjectRoot:         ".",
-		Model:               provider,
+		ModelFactory:        provider,
 		EnabledBuiltinTools: []string{"bash", "file_read"}, // nil=all, []string{}=none
 		CustomTools:         []tool.Tool{&EchoTool{}},      // appended when Tools is empty
 	})

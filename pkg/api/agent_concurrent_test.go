@@ -40,8 +40,12 @@ func (m *blockingModel) Complete(ctx context.Context, _ model.Request) (*model.R
 	return &model.Response{Message: model.Message{Role: "assistant", Content: "ok"}}, nil
 }
 
-func (*blockingModel) CompleteStream(context.Context, model.Request, model.StreamHandler) error {
-	return errors.New("stream not supported")
+func (m *blockingModel) CompleteStream(ctx context.Context, req model.Request, cb model.StreamHandler) error {
+	resp, err := m.Complete(ctx, req)
+	if err != nil {
+		return err
+	}
+	return cb(model.StreamResult{Final: true, Response: resp})
 }
 
 func (m *blockingModel) Unblock() {
@@ -128,8 +132,12 @@ func (m staticOKModel) Complete(context.Context, model.Request) (*model.Response
 	return &model.Response{Message: model.Message{Role: "assistant", Content: m.content}}, nil
 }
 
-func (staticOKModel) CompleteStream(context.Context, model.Request, model.StreamHandler) error {
-	return errors.New("stream not supported")
+func (m staticOKModel) CompleteStream(_ context.Context, req model.Request, cb model.StreamHandler) error {
+	resp, err := m.Complete(nil, req)
+	if err != nil {
+		return err
+	}
+	return cb(model.StreamResult{Final: true, Response: resp})
 }
 
 func TestConcurrentExecution(t *testing.T) {

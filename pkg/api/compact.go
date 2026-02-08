@@ -357,9 +357,18 @@ func (c *compactor) completeSummary(ctx context.Context, req model.Request) (*mo
 				req.Model = fallback
 			}
 		}
-		resp, err := c.model.Complete(ctx, req)
-		if err == nil {
+		var resp *model.Response
+		err := c.model.CompleteStream(ctx, req, func(sr model.StreamResult) error {
+			if sr.Final && sr.Response != nil {
+				resp = sr.Response
+			}
+			return nil
+		})
+		if err == nil && resp != nil {
 			return resp, nil
+		}
+		if err == nil && resp == nil {
+			err = errors.New("api: compact summary returned no final response")
 		}
 		lastErr = err
 		if attempts > 1 {

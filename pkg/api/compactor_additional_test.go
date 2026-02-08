@@ -32,8 +32,12 @@ func (m *summaryModel) Complete(ctx context.Context, req model.Request) (*model.
 	return &model.Response{Message: model.Message{Content: m.content}}, nil
 }
 
-func (m *summaryModel) CompleteStream(context.Context, model.Request, model.StreamHandler) error {
-	return nil
+func (m *summaryModel) CompleteStream(_ context.Context, req model.Request, cb model.StreamHandler) error {
+	resp, err := m.Complete(nil, req)
+	if err != nil {
+		return err
+	}
+	return cb(model.StreamResult{Final: true, Response: resp})
 }
 
 func TestCompactor_ShouldCompactThreshold(t *testing.T) {

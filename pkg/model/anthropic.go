@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -610,10 +611,14 @@ func toolCallFromBlock(block anthropicsdk.ContentBlockUnion) *ToolCall {
 	if id == "" || name == "" {
 		return nil
 	}
+	args := decodeJSON(block.Input)
+	if len(args) == 0 && len(block.Input) > 0 {
+		log.Printf("WARNING: tool_use %q has empty input (raw=%s) — API proxy may have stripped arguments", name, string(block.Input))
+	}
 	return &ToolCall{
 		ID:        id,
 		Name:      name,
-		Arguments: decodeJSON(block.Input),
+		Arguments: args,
 	}
 }
 

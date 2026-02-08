@@ -1025,9 +1025,20 @@ func (m *conversationModel) Generate(ctx context.Context, _ *agent.Context) (*ag
 		st.Values["model.request"] = req
 	}
 
-	resp, err := m.base.Complete(ctx, req)
-	if err != nil {
+	// Use streaming internally: some API proxies return empty tool_use.input
+	// in non-streaming mode but work correctly with streaming. Streaming is
+	// also the production-standard path for the Anthropic API.
+	var resp *model.Response
+	if err := m.base.CompleteStream(ctx, req, func(sr model.StreamResult) error {
+		if sr.Final && sr.Response != nil {
+			resp = sr.Response
+		}
+		return nil
+	}); err != nil {
 		return nil, err
+	}
+	if resp == nil {
+		return nil, errors.New("model returned no final response")
 	}
 	m.usage = resp.Usage
 	m.stopReason = resp.StopReason
@@ -1057,6 +1068,12 @@ func (m *conversationModel) Generate(ctx context.Context, _ *agent.Context) (*ag
 		out.ToolCalls = make([]agent.ToolCall, len(assistant.ToolCalls))
 		for i, call := range assistant.ToolCalls {
 			out.ToolCalls[i] = agent.ToolCall{ID: call.ID, Name: call.Name, Input: call.Arguments}
+		}
+		for _, tc := range out.ToolCalls {
+			if len(tc.Input) == 0 {
+				log.Printf("WARNING: tool call %q (id=%s) has empty arguments — "+
+					"this usually means the API proxy stripped tool_use.input", tc.Name, tc.ID)
+			}
 		}
 	}
 	return out, nil
@@ -1110,6 +1127,38 @@ func (t *runtimeToolExecutor) Execute(ctx context.Context, call agent.ToolCall, 
 	}
 	if !t.isAllowed(ctx, call.Name) {
 		return agent.ToolResult{}, fmt.Errorf("tool %s is not whitelisted", call.Name)
+	}
+
+	// Defensive check: if tool call has empty/nil arguments but the tool requires
+	// parameters, return a diagnostic error instead of executing with missing params.
+	// This commonly happens when an API proxy strips tool_use.input (returns "input": {}).
+	if len(call.Input) == 0 {
+		if reg := t.executor.Registry(); reg != nil {
+			if impl, err := reg.Get(call.Name); err == nil {
+				if schema := impl.Schema(); schema != nil && len(schema.Required) > 0 {
+					errMsg := fmt.Sprintf(
+						"tool %q called with empty arguments but requires %v; "+
+							"the API proxy likely stripped tool_use.input — check proxy configuration",
+						call.Name, schema.Required)
+					log.Printf("WARNING: %s (id=%s)", errMsg, call.ID)
+					if t.history != nil {
+						t.history.Append(message.Message{
+							Role: "tool",
+							ToolCalls: []message.ToolCall{{
+								ID:     call.ID,
+								Name:   call.Name,
+								Result: errMsg,
+							}},
+						})
+					}
+					return agent.ToolResult{
+						Name:     call.Name,
+						Output:   errMsg,
+						Metadata: map[string]any{"error": "empty_arguments"},
+					}, nil
+				}
+			}
+		}
 	}
 
 	// Helper to append tool result to history

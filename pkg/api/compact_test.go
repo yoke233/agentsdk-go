@@ -22,7 +22,11 @@ func (s *compactStubModel) Complete(ctx context.Context, req model.Request) (*mo
 }
 
 func (s *compactStubModel) CompleteStream(ctx context.Context, req model.Request, cb model.StreamHandler) error {
-	return nil
+	resp, err := s.Complete(ctx, req)
+	if err != nil {
+		return err
+	}
+	return cb(model.StreamResult{Final: true, Response: resp})
 }
 
 func TestCompactConfigDefaults(t *testing.T) {
