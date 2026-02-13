@@ -598,30 +598,69 @@ func mergeEnv(base []string, extra map[string]string) []string {
 func newShellCommand(ctx context.Context, command string) *exec.Cmd {
 	trimmed := strings.TrimSpace(command)
 	if trimmed == "" {
+		if shell := preferredPOSIXShell(); shell != "" {
+			return exec.CommandContext(ctx, shell, "-c", trimmed)
+		}
+		if runtime.GOOS == "windows" {
+			return exec.CommandContext(ctx, "cmd", "/C", trimmed)
+		}
 		return exec.CommandContext(ctx, "sh", "-c", trimmed)
 	}
 
 	// When command points to an existing script path, execute it as a script
 	// argument instead of shell-evaluating the path string. This avoids Windows
 	// backslash escaping issues such as "C:\...".
-	if info, err := os.Stat(trimmed); err == nil && !info.IsDir() {
-		if _, shErr := exec.LookPath("sh"); shErr == nil {
-			return exec.CommandContext(ctx, "sh", trimmed)
+	if looksLikeScriptPath(trimmed) {
+		if info, err := os.Stat(trimmed); err == nil && !info.IsDir() {
+			if shell := preferredPOSIXShell(); shell != "" {
+				return exec.CommandContext(ctx, shell, trimmed)
+			}
+			if runtime.GOOS == "windows" {
+				return exec.CommandContext(ctx, "cmd", "/C", trimmed)
+			}
+			return exec.CommandContext(ctx, trimmed)
 		}
-		if runtime.GOOS == "windows" {
-			return exec.CommandContext(ctx, "cmd", "/C", trimmed)
-		}
-		return exec.CommandContext(ctx, trimmed)
 	}
 
 	// General command snippets still go through shell parsing.
-	if _, err := exec.LookPath("sh"); err == nil {
-		return exec.CommandContext(ctx, "sh", "-c", trimmed)
+	if shell := preferredPOSIXShell(); shell != "" {
+		return exec.CommandContext(ctx, shell, "-c", trimmed)
 	}
 	if runtime.GOOS == "windows" {
 		return exec.CommandContext(ctx, "cmd", "/C", trimmed)
 	}
 	return exec.CommandContext(ctx, "sh", "-c", trimmed)
+}
+
+func preferredPOSIXShell() string {
+	if runtime.GOOS != "windows" {
+		if info, err := os.Stat("/bin/sh"); err == nil && !info.IsDir() {
+			return "/bin/sh"
+		}
+	}
+	if shell, err := exec.LookPath("sh"); err == nil && strings.TrimSpace(shell) != "" {
+		return shell
+	}
+	return ""
+}
+
+func looksLikeScriptPath(command string) bool {
+	if command == "" {
+		return false
+	}
+	if strings.ContainsAny(command, "|&;<>()$`") {
+		return false
+	}
+	if strings.Contains(command, " ") || strings.Contains(command, "\t") || strings.Contains(command, "\n") {
+		return false
+	}
+	if strings.HasPrefix(command, ".") {
+		return true
+	}
+	if strings.HasPrefix(command, "/") || strings.HasPrefix(command, "\\") {
+		return true
+	}
+	return strings.Contains(command, "/") || strings.Contains(command, "\\")
 }
 
 // extractMatcherTarget returns the string to match against the hook's selector

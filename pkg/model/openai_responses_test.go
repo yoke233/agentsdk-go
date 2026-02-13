@@ -267,6 +267,73 @@ func TestBuildResponsesInput_MultimodalImageURL(t *testing.T) {
 	assert.Equal(t, "https://example.com/vision.png", parts[0].OfInputImage.ImageURL.Value)
 }
 
+func TestBuildResponsesInput_MultimodalPreservesMessageRoles(t *testing.T) {
+	msgs := []Message{
+		{Role: "system", Content: "system context"},
+		{Role: "assistant", Content: "assistant context"},
+		{Role: "developer", Content: "developer context"},
+		{
+			Role: "user",
+			ContentBlocks: []ContentBlock{
+				{Type: ContentBlockImage, URL: "https://example.com/vision.png"},
+			},
+		},
+	}
+
+	result := buildResponsesInput(msgs)
+	require.Len(t, result.OfInputItemList, 4)
+
+	require.NotNil(t, result.OfInputItemList[0].OfMessage)
+	assert.Equal(t, responses.EasyInputMessageRoleSystem, result.OfInputItemList[0].OfMessage.Role)
+
+	require.NotNil(t, result.OfInputItemList[1].OfMessage)
+	assert.Equal(t, responses.EasyInputMessageRoleAssistant, result.OfInputItemList[1].OfMessage.Role)
+
+	require.NotNil(t, result.OfInputItemList[2].OfMessage)
+	assert.Equal(t, responses.EasyInputMessageRoleDeveloper, result.OfInputItemList[2].OfMessage.Role)
+
+	require.NotNil(t, result.OfInputItemList[3].OfMessage)
+	assert.Equal(t, responses.EasyInputMessageRoleUser, result.OfInputItemList[3].OfMessage.Role)
+}
+
+func TestBuildResponsesInput_MultimodalPreservesToolHistory(t *testing.T) {
+	msgs := []Message{
+		{
+			Role: "assistant",
+			ToolCalls: []ToolCall{
+				{ID: "call_1", Name: "get_weather", Arguments: map[string]any{"city": "Tokyo"}},
+			},
+		},
+		{
+			Role: "tool",
+			ToolCalls: []ToolCall{
+				{ID: "call_1", Result: `{"temp":25}`},
+			},
+		},
+		{
+			Role: "user",
+			ContentBlocks: []ContentBlock{
+				{Type: ContentBlockImage, URL: "https://example.com/vision.png"},
+			},
+		},
+	}
+
+	result := buildResponsesInput(msgs)
+	require.Len(t, result.OfInputItemList, 3)
+
+	require.NotNil(t, result.OfInputItemList[0].OfFunctionCall)
+	assert.Equal(t, "call_1", result.OfInputItemList[0].OfFunctionCall.CallID)
+	assert.Equal(t, "get_weather", result.OfInputItemList[0].OfFunctionCall.Name)
+	assert.JSONEq(t, `{"city":"Tokyo"}`, result.OfInputItemList[0].OfFunctionCall.Arguments)
+
+	require.NotNil(t, result.OfInputItemList[1].OfFunctionCallOutput)
+	assert.Equal(t, "call_1", result.OfInputItemList[1].OfFunctionCallOutput.CallID)
+	assert.Equal(t, `{"temp":25}`, result.OfInputItemList[1].OfFunctionCallOutput.Output)
+
+	require.NotNil(t, result.OfInputItemList[2].OfMessage)
+	assert.Equal(t, responses.EasyInputMessageRoleUser, result.OfInputItemList[2].OfMessage.Role)
+}
+
 func TestConvertToolsToResponsesAPI(t *testing.T) {
 	tests := []struct {
 		name    string
