@@ -228,7 +228,7 @@ bus.Close()
   - **Limits**: `MaxIterations`, `Timeout`, `TokenLimit`, `MaxSessions`
   - **Tools**: `Tools []tool.Tool` (legacy override), `EnabledBuiltinTools []string` (nil = all, empty = none), `DisallowedTools []string`, `CustomTools []tool.Tool`, `MCPServers []string`
   - **Hooks**: `TypedHooks []corehooks.ShellHook`, `HookMiddleware []coremw.Middleware`, `HookTimeout time.Duration`
-  - **Runtime**: `Skills []SkillRegistration`, `Commands []CommandRegistration`, `Subagents []SubagentRegistration`
+  - **Runtime**: `Skills []SkillRegistration`, `SkillDirs []string`, `DisableDefaultProjectSkills bool`, `Commands []CommandRegistration`, `Subagents []SubagentRegistration`
   - **Sandbox**: `Sandbox SandboxOptions`
   - **Token Tracking**: `TokenTracking bool`, `TokenCallback TokenCallback`
   - **Permissions**: `PermissionRequestHandler`, `ApprovalQueue *security.ApprovalQueue`, `ApprovalApprover string`, `ApprovalWhitelistTTL time.Duration`, `ApprovalWait bool`
@@ -298,6 +298,12 @@ for evt := range eventsCh {
 - `ModeContext` (`options.go:41`) bundles `EntryPoint` with `CLIContext`, `CIContext`, `PlatformContext`. When `Request.Mode` is empty, Runtime fills it from `Options.Mode`. CLI/CI/Platform structs allow `Metadata`/`Labels` for hooks or skills.
 - `SandboxOptions` (`options.go:87`) exposes `Root`, `AllowedPaths`, `NetworkAllow`, `ResourceLimit sandbox.ResourceLimits`; `buildSandboxManager` converts to `sandbox.Manager` shared with the tool executor.
 - `SkillRegistration`, `CommandRegistration`, `SubagentRegistration` (`options.go:116-131`) bind declarative runtime definitions with handlers. Each has `Definition` and `Handler` fields. `registerSkills/Commands/Subagents` validate non-nil handlers.
+- Skill filesystem discovery (`runtime_helpers.go` + `runtime/skills/loader.go`) now supports multiple directories:
+  - Default behavior: when `SkillDirs` is empty and `DisableDefaultProjectSkills=false`, only `ProjectRoot/.claude/skills` is scanned.
+  - Combined behavior: when `SkillDirs` is non-empty and `DisableDefaultProjectSkills=false`, scan order is `ProjectRoot/.claude/skills` first, then each `SkillDirs` entry in order.
+  - Explicit-only behavior: when `SkillDirs` is non-empty and `DisableDefaultProjectSkills=true`, only `SkillDirs` are scanned.
+  - Conflict rule: same skill name is resolved by **last loaded directory wins** (later directories override earlier directories); loader reports a warning including both source paths.
+  - Path handling: loader trims empty entries, `Clean`s paths, de-duplicates directories, and records inaccessible/non-directory entries as warnings without aborting all skill loading.
 - `WithMaxSessions` (`options.go:149`) returns a configurator to adjust `Options.MaxSessions` before `api.New`; used with `historyStore` for dynamic session caps.
 - `Request.ToolWhitelist` converts to `map[string]struct{}` during `prepare` and gates tool execution; disallowed tools are rejected early.
 

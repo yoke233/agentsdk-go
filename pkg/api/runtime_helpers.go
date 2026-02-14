@@ -192,18 +192,22 @@ func registerSubagents(registrations []SubagentRegistration) (*subagents.Manager
 }
 
 type loaderOptions struct {
-	ProjectRoot string
-	UserHome    string
-	EnableUser  bool
-	fs          *config.FS
+	ProjectRoot                 string
+	UserHome                    string
+	EnableUser                  bool
+	SkillDirs                   []string
+	DisableDefaultProjectSkills bool
+	fs                          *config.FS
 }
 
 func buildLoaderOptions(opts Options) loaderOptions {
 	return loaderOptions{
-		ProjectRoot: opts.ProjectRoot,
-		UserHome:    "",
-		EnableUser:  false,
-		fs:          opts.fsLayer,
+		ProjectRoot:                 opts.ProjectRoot,
+		UserHome:                    "",
+		EnableUser:                  false,
+		SkillDirs:                   append([]string(nil), opts.SkillDirs...),
+		DisableDefaultProjectSkills: opts.DisableDefaultProjectSkills,
+		fs:                          opts.fsLayer,
 	}
 }
 
@@ -262,10 +266,12 @@ func mergeCommandRegistrations(fsRegs []commands.CommandRegistration, manual []C
 func buildSkillsRegistry(opts Options) (*skills.Registry, []error) {
 	loader := buildLoaderOptions(opts)
 	fsRegs, errs := skills.LoadFromFS(skills.LoaderOptions{
-		ProjectRoot: loader.ProjectRoot,
-		UserHome:    loader.UserHome,
-		EnableUser:  loader.EnableUser,
-		FS:          loader.fs,
+		ProjectRoot:                 loader.ProjectRoot,
+		UserHome:                    loader.UserHome,
+		EnableUser:                  loader.EnableUser,
+		SkillDirs:                   loader.SkillDirs,
+		DisableDefaultProjectSkills: loader.DisableDefaultProjectSkills,
+		FS:                          loader.fs,
 	})
 
 	merged := mergeSkillRegistrations(fsRegs, opts.Skills, &errs)

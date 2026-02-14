@@ -213,9 +213,14 @@ type Options struct {
 	HookMiddleware []coremw.Middleware
 	HookTimeout    time.Duration
 
-	Skills    []SkillRegistration
-	Commands  []CommandRegistration
-	Subagents []SubagentRegistration
+	Skills []SkillRegistration
+	// SkillDirs appends additional skills directories to scan.
+	// Relative paths are resolved against ProjectRoot.
+	SkillDirs []string
+	// DisableDefaultProjectSkills skips scanning ProjectRoot/.claude/skills.
+	DisableDefaultProjectSkills bool
+	Commands                    []CommandRegistration
+	Subagents                   []SubagentRegistration
 
 	Sandbox SandboxOptions
 
@@ -463,6 +468,9 @@ func (o Options) frozen() Options {
 			skillsCopy[i].Definition = def
 		}
 		o.Skills = skillsCopy
+	}
+	if len(o.SkillDirs) > 0 {
+		o.SkillDirs = append([]string(nil), o.SkillDirs...)
 	}
 	if len(o.Commands) > 0 {
 		o.Commands = append([]CommandRegistration(nil), o.Commands...)

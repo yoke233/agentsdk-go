@@ -61,6 +61,11 @@ type LoaderOptions struct {
 	UserHome string
 	// Deprecated: user-level scanning has been removed; this flag is ignored.
 	EnableUser bool
+	// SkillDirs appends additional skills directories to scan.
+	// Relative paths are resolved against ProjectRoot.
+	SkillDirs []string
+	// DisableDefaultProjectSkills skips scanning ProjectRoot/.claude/skills.
+	DisableDefaultProjectSkills bool
 	// FS is the filesystem abstraction layer for loading skills.
 	// If nil, falls back to os.* functions for backward compatibility.
 	FS *config.FS
@@ -152,13 +157,13 @@ func isValidSkillName(name string) bool {
 }
 
 // LoadFromFS loads skills from the filesystem. Errors are aggregated so one
-// broken file will not block others. Duplicate names are skipped with a
-// warning entry in the error list.
+// broken file will not block others. For duplicate names across directories,
+// later-loaded directories override earlier-loaded ones with a warning entry.
 func LoadFromFS(opts LoaderOptions) ([]SkillRegistration, []error) {
 	var (
 		registrations []SkillRegistration
 		errs          []error
-		allFiles      []SkillFile
+		merged        = map[string]SkillFile{}
 	)
 
 	fsLayer := opts.FS
@@ -167,30 +172,30 @@ func LoadFromFS(opts LoaderOptions) ([]SkillRegistration, []error) {
 	}
 
 	ops := resolveFileOps(opts.FS)
-
-	projectDir := filepath.Join(opts.ProjectRoot, ".claude", "skills")
-	files, loadErrs := loadSkillDir(projectDir, fsLayer)
-	errs = append(errs, loadErrs...)
-	allFiles = append(allFiles, files...)
-
-	if len(allFiles) == 0 {
+	dirs := buildSkillSearchDirs(opts)
+	for _, dir := range dirs {
+		files, loadErrs := loadSkillDir(dir, fsLayer)
+		errs = appendLoadResults(errs, dir, loadErrs)
+		for _, file := range files {
+			name := strings.ToLower(strings.TrimSpace(file.Metadata.Name))
+			if prev, ok := merged[name]; ok {
+				errs = append(errs, fmt.Errorf("skills: warning: overriding skill %q from %s with %s", file.Metadata.Name, prev.Path, file.Path))
+			}
+			merged[name] = file
+		}
+	}
+	if len(merged) == 0 {
 		return nil, errs
 	}
 
-	sort.Slice(allFiles, func(i, j int) bool {
-		if allFiles[i].Metadata.Name != allFiles[j].Metadata.Name {
-			return allFiles[i].Metadata.Name < allFiles[j].Metadata.Name
-		}
-		return allFiles[i].Path < allFiles[j].Path
-	})
+	names := make([]string, 0, len(merged))
+	for name := range merged {
+		names = append(names, name)
+	}
+	sort.Strings(names)
 
-	seen := map[string]string{}
-	for _, file := range allFiles {
-		if prev, ok := seen[file.Metadata.Name]; ok {
-			errs = append(errs, fmt.Errorf("skills: duplicate skill %q at %s (already from %s)", file.Metadata.Name, file.Path, prev))
-			continue
-		}
-		seen[file.Metadata.Name] = file.Path
+	for _, name := range names {
+		file := merged[name]
 
 		def := Definition{
 			Name:        file.Metadata.Name,
@@ -205,6 +210,67 @@ func LoadFromFS(opts LoaderOptions) ([]SkillRegistration, []error) {
 	}
 
 	return registrations, errs
+}
+
+func buildSkillSearchDirs(opts LoaderOptions) []string {
+	candidates := make([]string, 0, len(opts.SkillDirs)+1)
+	if !opts.DisableDefaultProjectSkills {
+		candidates = append(candidates, filepath.Join(opts.ProjectRoot, ".claude", "skills"))
+	}
+	candidates = append(candidates, opts.SkillDirs...)
+	return normalizeSkillDirs(opts.ProjectRoot, candidates)
+}
+
+func normalizeSkillDirs(projectRoot string, dirs []string) []string {
+	normalized := make([]string, 0, len(dirs))
+	seen := map[string]struct{}{}
+	for _, raw := range dirs {
+		path := strings.TrimSpace(raw)
+		if path == "" {
+			continue
+		}
+
+		path = filepath.Clean(path)
+		if !filepath.IsAbs(path) && projectRoot != "" {
+			path = filepath.Join(projectRoot, path)
+		}
+		if absPath, err := filepath.Abs(path); err == nil {
+			path = absPath
+		}
+		path = filepath.Clean(path)
+
+		key := path
+		if os.PathSeparator == '\\' {
+			key = strings.ToLower(path)
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, path)
+	}
+	return normalized
+}
+
+func appendLoadResults(errs []error, dir string, loadErrs []error) []error {
+	for _, err := range loadErrs {
+		if err == nil {
+			continue
+		}
+		if isDirectoryAccessError(err, dir) {
+			errs = append(errs, fmt.Errorf("skills: warning: %v", err))
+			continue
+		}
+		errs = append(errs, err)
+	}
+	return errs
+}
+
+func isDirectoryAccessError(err error, dir string) bool {
+	msg := err.Error()
+	return strings.Contains(msg, fmt.Sprintf("skills: stat %s:", dir)) ||
+		strings.Contains(msg, fmt.Sprintf("skills: read dir %s:", dir)) ||
+		strings.Contains(msg, fmt.Sprintf("skills: path %s is not a directory", dir))
 }
 
 func loadSkillDir(root string, fsLayer *config.FS) ([]SkillFile, []error) {
