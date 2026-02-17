@@ -128,19 +128,25 @@ func New(ctx context.Context, opts Options) (*Runtime, error) {
 	opts.Model = mdl
 
 	sbox, sbRoot := buildSandboxManager(opts, settings)
-	cmdExec, cmdErrs := buildCommandsExecutor(opts)
+	loader := buildLoaderOptions(opts)
+	if len(loader.PluginWarnings) > 0 {
+		for _, err := range loader.PluginWarnings {
+			log.Printf("plugin loader warning: %v", err)
+		}
+	}
+	cmdExec, cmdErrs := buildCommandsExecutorWithLoader(opts, loader)
 	if len(cmdErrs) > 0 {
 		for _, err := range cmdErrs {
 			log.Printf("command loader warning: %v", err)
 		}
 	}
-	skReg, skErrs := buildSkillsRegistry(opts)
+	skReg, skErrs := buildSkillsRegistryWithLoader(opts, loader)
 	if len(skErrs) > 0 {
 		for _, err := range skErrs {
 			log.Printf("skill loader warning: %v", err)
 		}
 	}
-	subMgr, subErrs := buildSubagentsManager(opts)
+	subMgr, subErrs := buildSubagentsManagerWithLoader(opts, loader)
 	if len(subErrs) > 0 {
 		for _, err := range subErrs {
 			log.Printf("subagent loader warning: %v", err)

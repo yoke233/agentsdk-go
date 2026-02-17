@@ -44,7 +44,10 @@ type LoaderOptions struct {
 	UserHome string
 	// Deprecated: user-level scanning has been removed; this flag is ignored.
 	EnableUser bool
-	FS         *config.FS
+	// CommandDirs appends additional command directories to scan.
+	// Relative paths are resolved against ProjectRoot.
+	CommandDirs []string
+	FS          *config.FS
 }
 
 func resolveFileOps(opts LoaderOptions) fileOps {
@@ -135,11 +138,15 @@ func LoadFromFS(opts LoaderOptions) ([]CommandRegistration, []error) {
 	ops := resolveFileOps(opts)
 	walk := resolveWalkDirFunc(opts)
 
-	projectDir := filepath.Join(opts.ProjectRoot, ".claude", "commands")
-	files, loadErrs := loadCommandDir(projectDir, ops, walk)
-	errs = append(errs, loadErrs...)
-	for name, file := range files {
-		merged[name] = file
+	for _, dir := range buildCommandSearchDirs(opts) {
+		files, loadErrs := loadCommandDir(dir, ops, walk)
+		errs = append(errs, loadErrs...)
+		for name, file := range files {
+			if prev, ok := merged[name]; ok {
+				errs = append(errs, fmt.Errorf("commands: warning: overriding command %q from %s with %s", file.Name, prev.Path, file.Path))
+			}
+			merged[name] = file
+		}
 	}
 
 	if len(merged) == 0 {
@@ -165,6 +172,44 @@ func LoadFromFS(opts LoaderOptions) ([]CommandRegistration, []error) {
 	}
 
 	return registrations, errs
+}
+
+func buildCommandSearchDirs(opts LoaderOptions) []string {
+	candidates := make([]string, 0, len(opts.CommandDirs)+1)
+	candidates = append(candidates, filepath.Join(opts.ProjectRoot, ".claude", "commands"))
+	candidates = append(candidates, opts.CommandDirs...)
+	return normalizeCommandDirs(opts.ProjectRoot, candidates)
+}
+
+func normalizeCommandDirs(projectRoot string, dirs []string) []string {
+	normalized := make([]string, 0, len(dirs))
+	seen := map[string]struct{}{}
+	for _, raw := range dirs {
+		path := strings.TrimSpace(raw)
+		if path == "" {
+			continue
+		}
+
+		path = filepath.Clean(path)
+		if !filepath.IsAbs(path) && projectRoot != "" {
+			path = filepath.Join(projectRoot, path)
+		}
+		if absPath, err := filepath.Abs(path); err == nil {
+			path = absPath
+		}
+		path = filepath.Clean(path)
+
+		key := path
+		if os.PathSeparator == '\\' {
+			key = strings.ToLower(path)
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, path)
+	}
+	return normalized
 }
 
 func loadCommandDir(root string, ops fileOps, walk walkDirFunc) (map[string]CommandFile, []error) {

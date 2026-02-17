@@ -152,6 +152,13 @@ type Options struct {
 	EntryPoint  EntryPoint
 	Mode        ModeContext
 	ProjectRoot string
+	// PluginRoot optionally overrides the default Claude Code plugin root
+	// directory. Relative paths are resolved against ProjectRoot.
+	PluginRoot string
+	// PluginManifestPath optionally points to a specific plugin manifest file.
+	// When set, it takes precedence over PluginRoot. Relative paths are resolved
+	// against ProjectRoot.
+	PluginManifestPath string
 	// EmbedFS 可选的嵌入文件系统，用于支持将 .claude 目录打包到二进制
 	// 当设置时，文件加载优先级为：OS 文件系统 > 嵌入 FS
 	// 这允许运行时通过创建本地文件来覆盖嵌入的默认配置
@@ -402,6 +409,12 @@ func (o Options) withDefaults() Options {
 			o.SettingsPath = trimmed
 		}
 	}
+	if trimmed := strings.TrimSpace(o.PluginRoot); trimmed != "" {
+		o.PluginRoot = resolvePathAgainstProjectRoot(o.ProjectRoot, trimmed)
+	}
+	if trimmed := strings.TrimSpace(o.PluginManifestPath); trimmed != "" {
+		o.PluginManifestPath = resolvePathAgainstProjectRoot(o.ProjectRoot, trimmed)
+	}
 
 	if o.Sandbox.Root == "" {
 		o.Sandbox.Root = o.ProjectRoot
@@ -416,6 +429,20 @@ func (o Options) withDefaults() Options {
 		o.MaxSessions = defaultMaxSessions
 	}
 	return o
+}
+
+func resolvePathAgainstProjectRoot(projectRoot, raw string) string {
+	path := strings.TrimSpace(raw)
+	if path == "" {
+		return ""
+	}
+	if !filepath.IsAbs(path) && projectRoot != "" {
+		path = filepath.Join(projectRoot, path)
+	}
+	if absPath, err := filepath.Abs(path); err == nil {
+		return filepath.Clean(absPath)
+	}
+	return filepath.Clean(path)
 }
 
 // frozen returns a defensive copy of Options so callers can safely reuse/mutate

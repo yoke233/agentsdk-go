@@ -22,6 +22,9 @@ type LoaderOptions struct {
 	// Deprecated: user-level scanning has been removed; this flag is ignored.
 	EnableUser bool
 	FS         *config.FS
+	// SubagentDirs appends additional discovery directories. Relative paths are
+	// resolved against ProjectRoot.
+	SubagentDirs []string
 }
 
 // SubagentFile captures an on-disk subagent definition.
@@ -74,11 +77,15 @@ func LoadFromFS(opts LoaderOptions) ([]SubagentRegistration, []error) {
 		fsLayer = config.NewFS(opts.ProjectRoot, nil)
 	}
 
-	projectDir := filepath.Join(opts.ProjectRoot, ".claude", "agents")
-	files, loadErrs := loadSubagentDir(projectDir, fsLayer)
-	errs = append(errs, loadErrs...)
-	for name, file := range files {
-		merged[name] = file
+	for _, dir := range buildDiscoveryDirs(opts.ProjectRoot, opts.SubagentDirs) {
+		files, loadErrs := loadSubagentDir(dir, fsLayer)
+		errs = append(errs, loadErrs...)
+		for name, file := range files {
+			if existing, exists := merged[name]; exists {
+				errs = append(errs, fmt.Errorf("subagents: warning: subagent %q overridden (old=%s, new=%s)", name, existing.Path, file.Path))
+			}
+			merged[name] = file
+		}
 	}
 
 	if len(merged) == 0 {
@@ -117,6 +124,41 @@ func LoadFromFS(opts LoaderOptions) ([]SubagentRegistration, []error) {
 	}
 
 	return registrations, errs
+}
+
+func buildDiscoveryDirs(projectRoot string, subagentDirs []string) []string {
+	defaultDir := filepath.Clean(filepath.Join(projectRoot, ".claude", "agents"))
+	dirs := []string{defaultDir}
+	seen := map[string]struct{}{
+		dedupeDirKey(defaultDir): {},
+	}
+
+	for _, rawDir := range subagentDirs {
+		dir := strings.TrimSpace(rawDir)
+		if dir == "" {
+			continue
+		}
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(projectRoot, dir)
+		}
+		dir = filepath.Clean(dir)
+		key := dedupeDirKey(dir)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		dirs = append(dirs, dir)
+	}
+
+	return dirs
+}
+
+func dedupeDirKey(path string) string {
+	key := filepath.Clean(path)
+	if filepath.Separator == '\\' {
+		key = strings.ToLower(key)
+	}
+	return key
 }
 
 func loadSubagentDir(root string, fsLayer *config.FS) (map[string]SubagentFile, []error) {

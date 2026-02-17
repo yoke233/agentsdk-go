@@ -195,28 +195,46 @@ type loaderOptions struct {
 	ProjectRoot                 string
 	UserHome                    string
 	EnableUser                  bool
+	CommandDirs                 []string
+	SubagentDirs                []string
 	SkillDirs                   []string
 	DisableDefaultProjectSkills bool
+	PluginWarnings              []error
 	fs                          *config.FS
 }
 
 func buildLoaderOptions(opts Options) loaderOptions {
-	return loaderOptions{
+	loader := loaderOptions{
 		ProjectRoot:                 opts.ProjectRoot,
 		UserHome:                    "",
 		EnableUser:                  false,
+		CommandDirs:                 nil,
+		SubagentDirs:                nil,
 		SkillDirs:                   append([]string(nil), opts.SkillDirs...),
 		DisableDefaultProjectSkills: opts.DisableDefaultProjectSkills,
 		fs:                          opts.fsLayer,
 	}
+
+	plugin, pluginErrs := loadPluginDirectories(opts.ProjectRoot, opts.fsLayer, opts.PluginRoot, opts.PluginManifestPath)
+	loader.PluginWarnings = append(loader.PluginWarnings, pluginErrs...)
+	loader.CommandDirs = append(loader.CommandDirs, plugin.CommandDirs...)
+	loader.SubagentDirs = append(loader.SubagentDirs, plugin.SubagentDirs...)
+	// Keep manual SkillDirs higher precedence than plugin-provided dirs by
+	// prepending plugin paths, because later entries override earlier ones.
+	loader.SkillDirs = append(append([]string(nil), plugin.SkillDirs...), loader.SkillDirs...)
+	return loader
 }
 
 func buildCommandsExecutor(opts Options) (*commands.Executor, []error) {
-	loader := buildLoaderOptions(opts)
+	return buildCommandsExecutorWithLoader(opts, buildLoaderOptions(opts))
+}
+
+func buildCommandsExecutorWithLoader(opts Options, loader loaderOptions) (*commands.Executor, []error) {
 	fsRegs, errs := commands.LoadFromFS(commands.LoaderOptions{
 		ProjectRoot: loader.ProjectRoot,
 		UserHome:    loader.UserHome,
 		EnableUser:  loader.EnableUser,
+		CommandDirs: loader.CommandDirs,
 		FS:          loader.fs,
 	})
 
@@ -264,7 +282,10 @@ func mergeCommandRegistrations(fsRegs []commands.CommandRegistration, manual []C
 }
 
 func buildSkillsRegistry(opts Options) (*skills.Registry, []error) {
-	loader := buildLoaderOptions(opts)
+	return buildSkillsRegistryWithLoader(opts, buildLoaderOptions(opts))
+}
+
+func buildSkillsRegistryWithLoader(opts Options, loader loaderOptions) (*skills.Registry, []error) {
 	fsRegs, errs := skills.LoadFromFS(skills.LoaderOptions{
 		ProjectRoot:                 loader.ProjectRoot,
 		UserHome:                    loader.UserHome,
@@ -318,12 +339,16 @@ func mergeSkillRegistrations(fsRegs []skills.SkillRegistration, manual []SkillRe
 }
 
 func buildSubagentsManager(opts Options) (*subagents.Manager, []error) {
-	loader := buildLoaderOptions(opts)
+	return buildSubagentsManagerWithLoader(opts, buildLoaderOptions(opts))
+}
+
+func buildSubagentsManagerWithLoader(opts Options, loader loaderOptions) (*subagents.Manager, []error) {
 	projectRegs, errs := subagents.LoadFromFS(subagents.LoaderOptions{
-		ProjectRoot: loader.ProjectRoot,
-		UserHome:    loader.UserHome,
-		EnableUser:  false,
-		FS:          loader.fs,
+		ProjectRoot:  loader.ProjectRoot,
+		UserHome:     loader.UserHome,
+		EnableUser:   false,
+		SubagentDirs: loader.SubagentDirs,
+		FS:           loader.fs,
 	})
 
 	merged := mergeSubagentRegistrations(opts.Subagents, projectRegs, &errs)

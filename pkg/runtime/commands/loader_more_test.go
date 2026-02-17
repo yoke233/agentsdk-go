@@ -127,3 +127,33 @@ func TestLoadedMetaOrFallback(t *testing.T) {
 		t.Fatalf("expected loaded metadata, got %v", got)
 	}
 }
+
+func TestBuildCommandSearchDirsNormalizesAndDeduplicates(t *testing.T) {
+	root := t.TempDir()
+	customDir := filepath.Join(root, "custom-commands")
+	mustWrite(t, filepath.Join(customDir, "dedup.md"), "dedup body")
+
+	dirs := buildCommandSearchDirs(LoaderOptions{
+		ProjectRoot: root,
+		CommandDirs: []string{
+			"",
+			"   ",
+			"custom-commands",
+			customDir,
+			filepath.Join(root, ".", "custom-commands"),
+		},
+	})
+	if len(dirs) != 2 {
+		t.Fatalf("expected 2 directories after dedupe, got %d: %v", len(dirs), dirs)
+	}
+
+	expectedDefault := filepath.Clean(filepath.Join(root, ".claude", "commands"))
+	if dirs[0] != expectedDefault {
+		t.Fatalf("expected first directory to be default path %q, got %q", expectedDefault, dirs[0])
+	}
+
+	expectedCustom := filepath.Clean(customDir)
+	if dirs[1] != expectedCustom {
+		t.Fatalf("expected deduped custom path %q, got %q", expectedCustom, dirs[1])
+	}
+}

@@ -360,6 +360,39 @@ SDK 使用 `.claude/` 目录进行配置，与 Claude Code 兼容：
 
 `~/.claude` 已不再读取，请将全局配置迁移到项目范围的 `.claude/` 目录；原放在用户主目录的 `settings.json` / `settings.local.json` 需要复制到各项目根目录，确保加载顺序符合预期。
 
+### Claude Code 插件目录（`.claude-plugin`）
+
+Runtime 也支持从 `.claude-plugin/plugin.json` 声明式加载插件资源。
+manifest 可声明额外的 `commands`、`agents`、`skills` 目录，随后并入现有发现链路（冲突规则与常规加载一致：后加载覆盖先加载，并记录 warning）。
+
+最小 manifest 示例：
+
+```json
+{
+  "commands": ["commands"],
+  "agents": ["agents"],
+  "skills": ["skills"]
+}
+```
+
+通过 `api.Options` 覆盖 plugin 路径：
+
+```go
+runtime, err := api.New(ctx, api.Options{
+    ProjectRoot: ".",
+    ModelFactory: provider,
+    // 可选：覆盖 plugin 根目录（默认读取 <PluginRoot>/plugin.json）
+    PluginRoot: "custom-plugins/my-plugin",
+    // 可选：显式指定 manifest 文件（优先级高于 PluginRoot）
+    PluginManifestPath: "custom-plugins/my-plugin/plugin.prod.json",
+})
+```
+
+manifest 校验与安全约束：
+- `commands` / `agents` / `skills` 必须是 `string` 或 `[]string`
+- 未知字段不会中断加载，但会记录 warning
+- 路径必须相对 plugin 根目录；绝对路径或越界路径会被忽略并记录 warning
+
 ### 配置示例
 
 ```json

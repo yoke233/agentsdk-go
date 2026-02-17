@@ -397,6 +397,41 @@ Configuration precedence (high → low):
 
 `~/.claude` is no longer read; use project-scoped files for all configuration.
 
+### Claude Code Plugin Directory (`.claude-plugin`)
+
+Runtime also supports declarative plugin assets from `.claude-plugin/plugin.json`.
+The manifest can declare additional `commands`, `agents`, and `skills` directories.
+Those directories are merged into runtime discovery (same handlers, same conflict
+rules: later directories override earlier ones with warnings).
+
+Minimal manifest example:
+
+```json
+{
+  "commands": ["commands"],
+  "agents": ["agents"],
+  "skills": ["skills"]
+}
+```
+
+Override plugin location in code:
+
+```go
+rt, err := api.New(ctx, api.Options{
+    ProjectRoot: ".",
+    ModelFactory: provider,
+    // Optional: override plugin root (expects <PluginRoot>/plugin.json)
+    PluginRoot: "custom-plugins/my-plugin",
+    // Optional: explicit manifest path (takes precedence over PluginRoot)
+    PluginManifestPath: "custom-plugins/my-plugin/plugin.prod.json",
+})
+```
+
+Manifest safety/validation:
+- `commands` / `agents` / `skills` must be `string` or `[]string`.
+- Unknown keys are ignored but logged as warnings.
+- Declared paths must be relative to the plugin root; absolute or escaping paths are ignored with warnings.
+
 ### Configuration Example
 
 ```json
