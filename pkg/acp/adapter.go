@@ -204,11 +204,16 @@ func (a *Adapter) Prompt(ctx context.Context, params acpproto.PromptRequest) (ac
 		})
 	}
 
-	stream, err := rt.RunStream(turnCtx, api.Request{
+	runRequest := api.Request{
 		SessionID:     string(params.SessionId),
 		Prompt:        promptText,
 		ContentBlocks: contentBlocks,
-	})
+	}
+	if state.currentMode() == modeArchitectID {
+		runRequest.ToolWhitelist = architectToolWhitelist()
+	}
+
+	stream, err := rt.RunStream(turnCtx, runRequest)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(turnCtx.Err(), context.Canceled) {
 			return acpproto.PromptResponse{StopReason: acpproto.StopReasonCancelled}, nil
@@ -263,7 +268,8 @@ func (a *Adapter) Cancel(_ context.Context, params acpproto.CancelNotification) 
 	return nil
 }
 
-// SetSessionMode validates and updates current mode, then emits current_mode_update.
+// SetSessionMode validates and updates current mode, then emits sync updates
+// for both legacy modes and configOptions(category=mode).
 func (a *Adapter) SetSessionMode(ctx context.Context, params acpproto.SetSessionModeRequest) (acpproto.SetSessionModeResponse, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -282,10 +288,21 @@ func (a *Adapter) SetSessionMode(ctx context.Context, params acpproto.SetSession
 	}
 
 	state.setMode(params.ModeId)
+	options := state.snapshotConfigOptions()
+
 	if err := a.emitSessionUpdate(ctx, params.SessionId, acpproto.SessionUpdate{
 		CurrentModeUpdate: &acpproto.SessionCurrentModeUpdate{
 			SessionUpdate: "current_mode_update",
 			CurrentModeId: params.ModeId,
+		},
+	}); err != nil {
+		return acpproto.SetSessionModeResponse{}, err
+	}
+
+	if err := a.emitSessionUpdate(ctx, params.SessionId, acpproto.SessionUpdate{
+		ConfigOptionUpdate: &acpproto.SessionConfigOptionUpdate{
+			SessionUpdate: "config_option_update",
+			ConfigOptions: options,
 		},
 	}); err != nil {
 		return acpproto.SetSessionModeResponse{}, err
@@ -313,6 +330,17 @@ func (a *Adapter) SetSessionConfigOption(ctx context.Context, params acpproto.Se
 			"value":    string(params.Value),
 			"error":    err.Error(),
 		})
+	}
+
+	if params.ConfigId == configSessionModeID {
+		if err := a.emitSessionUpdate(ctx, params.SessionId, acpproto.SessionUpdate{
+			CurrentModeUpdate: &acpproto.SessionCurrentModeUpdate{
+				SessionUpdate: "current_mode_update",
+				CurrentModeId: state.currentMode(),
+			},
+		}); err != nil {
+			return acpproto.SetSessionConfigOptionResponse{}, err
+		}
 	}
 
 	if err := a.emitSessionUpdate(ctx, params.SessionId, acpproto.SessionUpdate{

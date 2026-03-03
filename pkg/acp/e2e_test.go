@@ -182,31 +182,69 @@ func TestACPInprocLifecycleAndStreaming(t *testing.T) {
 
 	var selectedConfig *acpproto.SessionConfigOptionSelect
 	for _, option := range sess.ConfigOptions {
-		if option.Select != nil && option.Select.Id == configPermissionModeID {
+		if option.Select != nil && option.Select.Id == configSessionModeID {
 			selectedConfig = option.Select
 			break
 		}
 	}
 	if selectedConfig == nil {
-		t.Fatalf("permission_mode config option not found")
+		t.Fatalf("mode config option not found")
 	}
 	setConfigResp, err := h.clientConn.SetSessionConfigOption(context.Background(), acpproto.SetSessionConfigOptionRequest{
 		SessionId: sess.SessionId,
-		ConfigId:  configPermissionModeID,
-		Value:     permissionModeAllowAlways,
+		ConfigId:  configSessionModeID,
+		Value:     modeConfigValue(modeArchitectID),
 	})
 	if err != nil {
 		t.Fatalf("set session config option failed: %v", err)
 	}
-	var updated bool
+	var modeConfigUpdated bool
 	for _, option := range setConfigResp.ConfigOptions {
-		if option.Select == nil || option.Select.Id != configPermissionModeID {
+		if option.Select == nil || option.Select.Id != configSessionModeID {
 			continue
 		}
-		updated = option.Select.CurrentValue == permissionModeAllowAlways
+		modeConfigUpdated = option.Select.CurrentValue == modeConfigValue(modeArchitectID)
 	}
-	if !updated {
-		t.Fatalf("permission_mode was not updated to %q", permissionModeAllowAlways)
+	if !modeConfigUpdated {
+		t.Fatalf("mode config option was not updated to %q", modeConfigValue(modeArchitectID))
+	}
+
+	updates = client.updatesSnapshot()
+	var sawModeCode bool
+	var sawModeArchitect bool
+	var sawConfigCode bool
+	var sawConfigArchitect bool
+	for _, update := range updates {
+		if update.SessionId != sess.SessionId {
+			continue
+		}
+		if update.Update.CurrentModeUpdate != nil {
+			switch update.Update.CurrentModeUpdate.CurrentModeId {
+			case modeCodeID:
+				sawModeCode = true
+			case modeArchitectID:
+				sawModeArchitect = true
+			}
+		}
+		if update.Update.ConfigOptionUpdate != nil {
+			for _, option := range update.Update.ConfigOptionUpdate.ConfigOptions {
+				if option.Select == nil || option.Select.Id != configSessionModeID {
+					continue
+				}
+				switch option.Select.CurrentValue {
+				case modeConfigValue(modeCodeID):
+					sawConfigCode = true
+				case modeConfigValue(modeArchitectID):
+					sawConfigArchitect = true
+				}
+			}
+		}
+	}
+	if !sawModeCode || !sawModeArchitect {
+		t.Fatalf("expected current_mode_update notifications for code and architect; got code=%v architect=%v", sawModeCode, sawModeArchitect)
+	}
+	if !sawConfigCode || !sawConfigArchitect {
+		t.Fatalf("expected config_option_update notifications for code and architect; got code=%v architect=%v", sawConfigCode, sawConfigArchitect)
 	}
 }
 
@@ -355,6 +393,73 @@ func TestACPInprocPermissionRoundTrip(t *testing.T) {
 	}
 }
 
+func TestACPInprocModePermissionPolicies(t *testing.T) {
+	root := t.TempDir()
+	client := newE2EClient()
+	client.permissionOutcome = permissionOptionAllowOnce
+	h := newE2EHarness(t, testOptionsForRootWithModel(t, root, stubModel{}), client)
+	initializeACP(t, h.clientConn, acpproto.ClientCapabilities{})
+	sess := mustNewSession(t, h.clientConn, root, nil)
+
+	state, ok := h.adapter.sessionByID(sess.SessionId)
+	if !ok {
+		t.Fatalf("session state not found")
+	}
+	bridge := h.adapter.newPermissionBridge(state, nil)
+
+	decision, err := bridge(context.Background(), api.PermissionRequest{ToolName: "Read"})
+	if err != nil {
+		t.Fatalf("ask mode permission bridge failed: %v", err)
+	}
+	if decision != "allow" {
+		t.Fatalf("ask mode decision=%q, want allow from client response", decision)
+	}
+	if count := len(client.permissionRequestsSnapshot()); count != 1 {
+		t.Fatalf("ask mode permission requests=%d, want 1", count)
+	}
+
+	if _, err := h.clientConn.SetSessionMode(context.Background(), acpproto.SetSessionModeRequest{
+		SessionId: sess.SessionId,
+		ModeId:    modeCodeID,
+	}); err != nil {
+		t.Fatalf("set mode code failed: %v", err)
+	}
+	decision, err = bridge(context.Background(), api.PermissionRequest{ToolName: "Write"})
+	if err != nil {
+		t.Fatalf("code mode permission bridge failed: %v", err)
+	}
+	if decision != "allow" {
+		t.Fatalf("code mode decision=%q, want allow", decision)
+	}
+	if count := len(client.permissionRequestsSnapshot()); count != 1 {
+		t.Fatalf("code mode should not request client permission; got %d requests", count)
+	}
+
+	if _, err := h.clientConn.SetSessionMode(context.Background(), acpproto.SetSessionModeRequest{
+		SessionId: sess.SessionId,
+		ModeId:    modeArchitectID,
+	}); err != nil {
+		t.Fatalf("set mode architect failed: %v", err)
+	}
+	decision, err = bridge(context.Background(), api.PermissionRequest{ToolName: "Write"})
+	if err != nil {
+		t.Fatalf("architect mode write check failed: %v", err)
+	}
+	if decision != "deny" {
+		t.Fatalf("architect mode write decision=%q, want deny", decision)
+	}
+	decision, err = bridge(context.Background(), api.PermissionRequest{ToolName: "Read"})
+	if err != nil {
+		t.Fatalf("architect mode read check failed: %v", err)
+	}
+	if decision != "allow" {
+		t.Fatalf("architect mode read decision=%q, want allow", decision)
+	}
+	if count := len(client.permissionRequestsSnapshot()); count != 1 {
+		t.Fatalf("architect mode should not request client permission; got %d requests", count)
+	}
+}
+
 func TestACPInprocCapabilityBridgeReadWriteBash(t *testing.T) {
 	root := t.TempDir()
 	client := newE2EClient()
@@ -443,6 +548,58 @@ func TestACPInprocCapabilityBridgeReadWriteBash(t *testing.T) {
 	}
 	if runtime.GOOS == "windows" && !strings.EqualFold(creates[0].Command, "cmd") {
 		t.Fatalf("windows terminal command=%q, want cmd", creates[0].Command)
+	}
+}
+
+func TestACPInprocArchitectModeBlocksMutatingCapabilityTools(t *testing.T) {
+	root := t.TempDir()
+	client := newE2EClient()
+	caps := acpproto.ClientCapabilities{}
+	caps.Fs.WriteTextFile = true
+	caps.Terminal = true
+
+	model := newToolPlanModel([]toolPlanStep{
+		{
+			ToolName: "Write",
+			Args: map[string]any{
+				"file_path": filepath.Join(root, "out.txt"),
+				"content":   "blocked",
+			},
+		},
+		{
+			ToolName: "Bash",
+			Args: map[string]any{
+				"command": "echo should-not-run",
+				"workdir": root,
+			},
+		},
+	})
+
+	h := newE2EHarness(t, testOptionsForRootWithModel(t, root, model), client)
+	initializeACP(t, h.clientConn, caps)
+	sess := mustNewSession(t, h.clientConn, root, nil)
+	if _, err := h.clientConn.SetSessionMode(context.Background(), acpproto.SetSessionModeRequest{
+		SessionId: sess.SessionId,
+		ModeId:    modeArchitectID,
+	}); err != nil {
+		t.Fatalf("set mode architect failed: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	_, _ = h.clientConn.Prompt(ctx, acpproto.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acpproto.ContentBlock{acpproto.TextBlock("attempt mutations")},
+	})
+
+	if writes := client.writeRequestsSnapshot(); len(writes) != 0 {
+		t.Fatalf("architect mode should block write capability; got %d write requests", len(writes))
+	}
+	if creates := client.createTerminalRequestsSnapshot(); len(creates) != 0 {
+		t.Fatalf("architect mode should block terminal execution; got %d create_terminal requests", len(creates))
+	}
+	if perms := client.permissionRequestsSnapshot(); len(perms) != 0 {
+		t.Fatalf("architect mode should not prompt for mutating tools; got %d permission requests", len(perms))
 	}
 }
 

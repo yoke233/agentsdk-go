@@ -11,14 +11,11 @@ import (
 )
 
 const (
-	modeDefaultID acpproto.SessionModeId = "default"
-	modeCodeID    acpproto.SessionModeId = "code"
+	modeAskID       acpproto.SessionModeId = "ask"
+	modeArchitectID acpproto.SessionModeId = "architect"
+	modeCodeID      acpproto.SessionModeId = "code"
 
-	configPermissionModeID acpproto.SessionConfigId = "permission_mode"
-
-	permissionModeAsk         acpproto.SessionConfigValueId = "ask"
-	permissionModeAllowAlways acpproto.SessionConfigValueId = "allow_always"
-	permissionModeDenyAlways  acpproto.SessionConfigValueId = "deny_always"
+	configSessionModeID acpproto.SessionConfigId = "mode"
 )
 
 type sessionState struct {
@@ -83,6 +80,15 @@ func (s *sessionState) hasMode(modeID acpproto.SessionModeId) bool {
 func (s *sessionState) setMode(modeID acpproto.SessionModeId) {
 	s.mu.Lock()
 	s.modes.CurrentModeId = modeID
+	for i := range s.configOptions {
+		selectConfig := s.configOptions[i].Select
+		if selectConfig == nil || selectConfig.Id != configSessionModeID {
+			continue
+		}
+		selectConfig.CurrentValue = modeConfigValue(modeID)
+		s.configOptions[i].Select = selectConfig
+		break
+	}
 	s.mu.Unlock()
 }
 
@@ -99,6 +105,13 @@ func (s *sessionState) setConfigOption(configID acpproto.SessionConfigId, value 
 			return nil, fmt.Errorf("unsupported value %q for config %q", value, configID)
 		}
 		selectConfig.CurrentValue = value
+		if configID == configSessionModeID {
+			modeID := configValueToMode(value)
+			if !s.hasModeLocked(modeID) {
+				return nil, fmt.Errorf("unsupported mode %q", modeID)
+			}
+			s.modes.CurrentModeId = modeID
+		}
 		s.configOptions[i].Select = selectConfig
 		return cloneConfigOptions(s.configOptions), nil
 	}
@@ -106,19 +119,10 @@ func (s *sessionState) setConfigOption(configID acpproto.SessionConfigId, value 
 	return nil, fmt.Errorf("unknown config option %q", configID)
 }
 
-func (s *sessionState) permissionMode() acpproto.SessionConfigValueId {
+func (s *sessionState) currentMode() acpproto.SessionModeId {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
-	for _, option := range s.configOptions {
-		if option.Select == nil {
-			continue
-		}
-		if option.Select.Id == configPermissionModeID {
-			return option.Select.CurrentValue
-		}
-	}
-	return permissionModeAsk
+	return s.modes.CurrentModeId
 }
 
 func (s *sessionState) beginTurn(next context.CancelFunc) (uint64, bool) {
@@ -156,41 +160,79 @@ func defaultSessionModes() acpproto.SessionModeState {
 	return acpproto.SessionModeState{
 		AvailableModes: []acpproto.SessionMode{
 			{
-				Id:          modeDefaultID,
-				Name:        "Default",
-				Description: acpproto.Ptr("Balanced general-purpose mode."),
+				Id:          modeAskID,
+				Name:        "Ask",
+				Description: acpproto.Ptr("Request permission before making changes."),
+			},
+			{
+				Id:          modeArchitectID,
+				Name:        "Architect",
+				Description: acpproto.Ptr("Planning-focused mode for design and analysis before implementation."),
 			},
 			{
 				Id:          modeCodeID,
 				Name:        "Code",
-				Description: acpproto.Ptr("Coding-focused mode with stronger execution bias."),
+				Description: acpproto.Ptr("Implementation-focused mode with full coding execution."),
 			},
 		},
-		CurrentModeId: modeDefaultID,
+		CurrentModeId: modeAskID,
 	}
 }
 
 func defaultSessionConfigOptions() []acpproto.SessionConfigOption {
 	values := acpproto.SessionConfigSelectOptionsUngrouped{
-		{Name: "Ask", Value: permissionModeAsk},
-		{Name: "Allow Always", Value: permissionModeAllowAlways},
-		{Name: "Deny Always", Value: permissionModeDenyAlways},
+		{
+			Name:        "Ask",
+			Value:       modeConfigValue(modeAskID),
+			Description: acpproto.Ptr("Request permission before making any changes."),
+		},
+		{
+			Name:        "Architect",
+			Value:       modeConfigValue(modeArchitectID),
+			Description: acpproto.Ptr("Design and plan software systems without implementation."),
+		},
+		{
+			Name:        "Code",
+			Value:       modeConfigValue(modeCodeID),
+			Description: acpproto.Ptr("Write and modify code with full tool access."),
+		},
 	}
+	categoryMode := acpproto.SessionConfigOptionCategoryOther("mode")
 
 	return []acpproto.SessionConfigOption{
 		{
 			Select: &acpproto.SessionConfigOptionSelect{
-				Type:         "select",
-				Id:           configPermissionModeID,
-				Name:         "Permission Mode",
-				Description:  acpproto.Ptr("Control how tool permission prompts are resolved."),
-				CurrentValue: permissionModeAsk,
+				Type:        "select",
+				Id:          configSessionModeID,
+				Name:        "Session Mode",
+				Description: acpproto.Ptr("Controls how the agent requests permission and approaches work."),
+				Category: &acpproto.SessionConfigOptionCategory{
+					Other: &categoryMode,
+				},
+				CurrentValue: modeConfigValue(modeAskID),
 				Options: acpproto.SessionConfigSelectOptions{
 					Ungrouped: &values,
 				},
 			},
 		},
 	}
+}
+
+func modeConfigValue(modeID acpproto.SessionModeId) acpproto.SessionConfigValueId {
+	return acpproto.SessionConfigValueId(modeID)
+}
+
+func configValueToMode(value acpproto.SessionConfigValueId) acpproto.SessionModeId {
+	return acpproto.SessionModeId(value)
+}
+
+func (s *sessionState) hasModeLocked(modeID acpproto.SessionModeId) bool {
+	for _, mode := range s.modes.AvailableModes {
+		if mode.Id == modeID {
+			return true
+		}
+	}
+	return false
 }
 
 func containsSelectValue(options acpproto.SessionConfigSelectOptions, value acpproto.SessionConfigValueId) bool {

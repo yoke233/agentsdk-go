@@ -21,10 +21,13 @@ const (
 
 func (a *Adapter) newPermissionBridge(state *sessionState, fallback api.PermissionRequestHandler) api.PermissionRequestHandler {
 	return func(ctx context.Context, req api.PermissionRequest) (coreevents.PermissionDecisionType, error) {
-		switch state.permissionMode() {
-		case permissionModeAllowAlways:
+		switch state.currentMode() {
+		case modeCodeID:
 			return coreevents.PermissionAllow, nil
-		case permissionModeDenyAlways:
+		case modeArchitectID:
+			if isArchitectReadOnlyTool(req.ToolName) {
+				return coreevents.PermissionAllow, nil
+			}
 			return coreevents.PermissionDeny, nil
 		}
 

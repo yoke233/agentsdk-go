@@ -8,6 +8,14 @@ Scope in this guide:
 - CLI stdio mode and in-process library mode
 - `unstable/*` ACP methods are intentionally out of scope
 
+Session mode behavior in this adapter:
+
+- `ask`: requests client permission before executing tools
+- `code`: auto-allows tool execution
+- `architect`: read-only mode (allows read-only tools, blocks mutating tools such as `Write`/`Bash`)
+
+`modes` and `configOptions` (with `id: "mode"` / `category: "mode"`) are kept in sync for compatibility with both old and new ACP clients.
+
 ## 1) CLI Stdio Mode
 
 Use the existing CLI entrypoint:

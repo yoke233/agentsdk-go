@@ -186,9 +186,9 @@ func TestSetSessionConfigOptionUpdatesSnapshot(t *testing.T) {
 		t.Fatalf("expected select config option")
 	}
 
-	targetValue := permissionModeAllowAlways
+	targetValue := modeConfigValue(modeCodeID)
 	if option.CurrentValue == targetValue {
-		targetValue = permissionModeDenyAlways
+		targetValue = modeConfigValue(modeArchitectID)
 	}
 
 	resp, err := adapter.SetSessionConfigOption(context.Background(), acpproto.SetSessionConfigOptionRequest{
@@ -210,6 +210,92 @@ func TestSetSessionConfigOptionUpdatesSnapshot(t *testing.T) {
 	}
 	if updated.CurrentValue != targetValue {
 		t.Fatalf("currentValue=%q, want %q", updated.CurrentValue, targetValue)
+	}
+
+	state, ok := adapter.sessionByID(newSession.SessionId)
+	if !ok {
+		t.Fatalf("session not found after config update")
+	}
+	if got := state.currentMode(); got != configValueToMode(targetValue) {
+		t.Fatalf("currentMode=%q, want %q", got, configValueToMode(targetValue))
+	}
+}
+
+func TestSetSessionModeSynchronizesConfigOption(t *testing.T) {
+	t.Parallel()
+
+	adapter := NewAdapter(testOptions(t))
+	newSession, err := adapter.NewSession(context.Background(), acpproto.NewSessionRequest{
+		Cwd:        t.TempDir(),
+		McpServers: []acpproto.McpServer{},
+	})
+	if err != nil {
+		t.Fatalf("new session failed: %v", err)
+	}
+
+	if _, err := adapter.SetSessionMode(context.Background(), acpproto.SetSessionModeRequest{
+		SessionId: newSession.SessionId,
+		ModeId:    modeArchitectID,
+	}); err != nil {
+		t.Fatalf("set session mode failed: %v", err)
+	}
+
+	state, ok := adapter.sessionByID(newSession.SessionId)
+	if !ok {
+		t.Fatalf("session not found after mode update")
+	}
+	options := state.snapshotConfigOptions()
+	if len(options) == 0 || options[0].Select == nil {
+		t.Fatalf("expected config options after mode update")
+	}
+	if got := options[0].Select.CurrentValue; got != modeConfigValue(modeArchitectID) {
+		t.Fatalf("currentValue=%q, want %q", got, modeConfigValue(modeArchitectID))
+	}
+}
+
+func TestNewSessionExposesProtocolModeSet(t *testing.T) {
+	t.Parallel()
+
+	adapter := NewAdapter(testOptions(t))
+	newSession, err := adapter.NewSession(context.Background(), acpproto.NewSessionRequest{
+		Cwd:        t.TempDir(),
+		McpServers: []acpproto.McpServer{},
+	})
+	if err != nil {
+		t.Fatalf("new session failed: %v", err)
+	}
+	if newSession.Modes == nil {
+		t.Fatalf("expected modes")
+	}
+	if got := newSession.Modes.CurrentModeId; got != modeAskID {
+		t.Fatalf("currentModeId=%q, want %q", got, modeAskID)
+	}
+	if len(newSession.Modes.AvailableModes) != 3 {
+		t.Fatalf("availableModes len=%d, want 3", len(newSession.Modes.AvailableModes))
+	}
+
+	modeIDs := map[acpproto.SessionModeId]bool{}
+	for _, mode := range newSession.Modes.AvailableModes {
+		modeIDs[mode.Id] = true
+	}
+	for _, want := range []acpproto.SessionModeId{modeAskID, modeArchitectID, modeCodeID} {
+		if !modeIDs[want] {
+			t.Fatalf("missing mode %q in availableModes", want)
+		}
+	}
+
+	if len(newSession.ConfigOptions) == 0 || newSession.ConfigOptions[0].Select == nil {
+		t.Fatalf("expected session mode config option")
+	}
+	selectOpt := newSession.ConfigOptions[0].Select
+	if selectOpt.Id != configSessionModeID {
+		t.Fatalf("config option id=%q, want %q", selectOpt.Id, configSessionModeID)
+	}
+	if selectOpt.CurrentValue != modeConfigValue(modeAskID) {
+		t.Fatalf("current config value=%q, want %q", selectOpt.CurrentValue, modeConfigValue(modeAskID))
+	}
+	if selectOpt.Category == nil || selectOpt.Category.Other == nil || *selectOpt.Category.Other != "mode" {
+		t.Fatalf("expected config option category mode")
 	}
 }
 
