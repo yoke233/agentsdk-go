@@ -15,6 +15,9 @@ import (
 	"github.com/cexll/agentsdk-go/pkg/api"
 	"github.com/cexll/agentsdk-go/pkg/message"
 	"github.com/cexll/agentsdk-go/pkg/model"
+	"github.com/cexll/agentsdk-go/pkg/runtime/commands"
+	"github.com/cexll/agentsdk-go/pkg/runtime/tasks"
+	"github.com/cexll/agentsdk-go/pkg/tool"
 	acpproto "github.com/coder/acp-go-sdk"
 )
 
@@ -248,6 +251,357 @@ func TestACPInprocLifecycleAndStreaming(t *testing.T) {
 	}
 }
 
+func TestACPInprocAuthenticateRoundTrip(t *testing.T) {
+	root := t.TempDir()
+	client := newE2EClient()
+	h := newE2EHarness(t, testOptionsForRootWithModel(t, root, stubModel{}), client)
+	initializeACP(t, h.clientConn, acpproto.ClientCapabilities{})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := h.clientConn.Authenticate(ctx, acpproto.AuthenticateRequest{MethodId: "none"}); err != nil {
+		t.Fatalf("authenticate failed: %v", err)
+	}
+}
+
+func TestACPInprocPromptSupportsProtocolContentBlocks(t *testing.T) {
+	root := t.TempDir()
+	capture := &capturingModel{}
+	client := newE2EClient()
+	h := newE2EHarness(t, testOptionsForRootWithModel(t, root, capture), client)
+	initializeACP(t, h.clientConn, acpproto.ClientCapabilities{})
+	sess := mustNewSession(t, h.clientConn, root, nil)
+
+	markdown := "text/markdown"
+	pdfMime := "application/pdf"
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	resp, err := h.clientConn.Prompt(ctx, acpproto.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt: []acpproto.ContentBlock{
+			acpproto.TextBlock("hello from text"),
+			acpproto.ImageBlock("aGVsbG8=", "image/png"),
+			acpproto.ResourceLinkBlock("doc-link", "file:///repo/doc.md"),
+			acpproto.ResourceBlock(acpproto.EmbeddedResourceResource{
+				TextResourceContents: &acpproto.TextResourceContents{
+					Uri:      "file:///repo/embedded.md",
+					Text:     "embedded context",
+					MimeType: &markdown,
+				},
+			}),
+			acpproto.ResourceBlock(acpproto.EmbeddedResourceResource{
+				BlobResourceContents: &acpproto.BlobResourceContents{
+					Uri:      "file:///repo/blob.pdf",
+					Blob:     "UEZERGF0YQ==",
+					MimeType: &pdfMime,
+				},
+			}),
+		},
+	})
+	if err != nil {
+		t.Fatalf("prompt failed: %v", err)
+	}
+	if resp.StopReason != acpproto.StopReasonEndTurn {
+		t.Fatalf("stopReason=%q, want %q", resp.StopReason, acpproto.StopReasonEndTurn)
+	}
+
+	req, ok := capture.lastRequest()
+	if !ok {
+		t.Fatalf("model did not receive a request")
+	}
+	if len(req.Messages) == 0 {
+		t.Fatalf("request has no messages")
+	}
+	msg := req.Messages[len(req.Messages)-1]
+
+	if !strings.Contains(msg.Content, "hello from text") {
+		t.Fatalf("message content missing text block, got %q", msg.Content)
+	}
+	if !strings.Contains(msg.Content, "embedded context") {
+		t.Fatalf("message content missing embedded text resource, got %q", msg.Content)
+	}
+	for _, want := range []string{
+		"Resource: file:///repo/doc.md",
+		"Resource: file:///repo/embedded.md",
+		"Resource: file:///repo/blob.pdf",
+	} {
+		if !strings.Contains(msg.Content, want) {
+			t.Fatalf("message content missing %q, got %q", want, msg.Content)
+		}
+	}
+
+	var sawTextBlock bool
+	var sawImageBlock bool
+	var sawResourceLinkDoc bool
+	var sawBlobDoc bool
+	for _, block := range msg.ContentBlocks {
+		switch block.Type {
+		case model.ContentBlockText:
+			if block.Text == "hello from text" {
+				sawTextBlock = true
+			}
+		case model.ContentBlockImage:
+			if block.MediaType == "image/png" && block.Data == "aGVsbG8=" {
+				sawImageBlock = true
+			}
+		case model.ContentBlockDocument:
+			if block.URL == "file:///repo/doc.md" {
+				sawResourceLinkDoc = true
+			}
+			if block.Data == "UEZERGF0YQ==" && block.MediaType == "application/pdf" {
+				sawBlobDoc = true
+			}
+		}
+	}
+	if !sawTextBlock || !sawImageBlock || !sawResourceLinkDoc || !sawBlobDoc {
+		t.Fatalf(
+			"unexpected content block coverage text=%v image=%v resource_link_doc=%v blob_doc=%v blocks=%+v",
+			sawTextBlock,
+			sawImageBlock,
+			sawResourceLinkDoc,
+			sawBlobDoc,
+			msg.ContentBlocks,
+		)
+	}
+}
+
+func TestACPInprocToolCallUpdatesIncludeRawInputRawOutputAndLocations(t *testing.T) {
+	root := t.TempDir()
+	model := newToolPlanModel([]toolPlanStep{
+		{
+			ToolName: "OutputRefTool",
+			Args: map[string]any{
+				"file_path": filepath.Join(root, "payload.txt"),
+				"offset":    int64(2),
+			},
+		},
+	})
+
+	opts := testOptionsForRootWithModel(t, root, model)
+	opts.CustomTools = []tool.Tool{
+		&scriptedTool{
+			name: "OutputRefTool",
+			exec: func(context.Context, map[string]interface{}) (*tool.ToolResult, error) {
+				return &tool.ToolResult{
+					Success: true,
+					Output:  strings.Repeat("x", 70*1024), // trigger output_ref persistence
+				}, nil
+			},
+		},
+	}
+
+	client := newE2EClient()
+	h := newE2EHarness(t, opts, client)
+	initializeACP(t, h.clientConn, acpproto.ClientCapabilities{})
+	sess := mustNewSession(t, h.clientConn, root, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	resp, err := h.clientConn.Prompt(ctx, acpproto.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acpproto.ContentBlock{acpproto.TextBlock("run output ref tool")},
+	})
+	if err != nil {
+		t.Fatalf("prompt failed: %v", err)
+	}
+	if resp.StopReason != acpproto.StopReasonEndTurn {
+		t.Fatalf("stopReason=%q, want %q", resp.StopReason, acpproto.StopReasonEndTurn)
+	}
+
+	updates := client.updatesSnapshot()
+	var sawRawInput bool
+	var sawCompleted bool
+	var sawRawOutputRef bool
+	var sawLocation bool
+
+	for _, update := range updates {
+		if update.SessionId != sess.SessionId || update.Update.ToolCallUpdate == nil {
+			continue
+		}
+		tu := update.Update.ToolCallUpdate
+
+		if tu.RawInput != nil {
+			if input, ok := tu.RawInput.(map[string]any); ok {
+				if strings.TrimSpace(fmt.Sprint(input["file_path"])) != "" {
+					sawRawInput = true
+				}
+			}
+		}
+		if tu.Status != nil && *tu.Status == acpproto.ToolCallStatusCompleted {
+			sawCompleted = true
+		}
+		if tu.RawOutput != nil {
+			if strings.Contains(fmt.Sprint(tu.RawOutput), "Output saved to:") {
+				sawRawOutputRef = true
+			}
+		}
+		for _, location := range tu.Locations {
+			if filepath.IsAbs(strings.TrimSpace(location.Path)) {
+				sawLocation = true
+			}
+		}
+	}
+
+	if !sawRawInput || !sawCompleted || !sawRawOutputRef || !sawLocation {
+		t.Fatalf(
+			"missing expected tool_call_update fields rawInput=%v completed=%v rawOutputRef=%v location=%v",
+			sawRawInput,
+			sawCompleted,
+			sawRawOutputRef,
+			sawLocation,
+		)
+	}
+}
+
+func TestACPInprocToolCallFailureMapsToFailedStatus(t *testing.T) {
+	root := t.TempDir()
+	model := newToolPlanModel([]toolPlanStep{
+		{
+			ToolName: "FailTool",
+			Args: map[string]any{
+				"reason": "boom",
+			},
+		},
+	})
+
+	opts := testOptionsForRootWithModel(t, root, model)
+	opts.CustomTools = []tool.Tool{
+		&scriptedTool{
+			name: "FailTool",
+			exec: func(context.Context, map[string]interface{}) (*tool.ToolResult, error) {
+				return &tool.ToolResult{
+					Success: false,
+					Output:  "tool failed",
+				}, errors.New("boom")
+			},
+		},
+	}
+
+	client := newE2EClient()
+	h := newE2EHarness(t, opts, client)
+	initializeACP(t, h.clientConn, acpproto.ClientCapabilities{})
+	sess := mustNewSession(t, h.clientConn, root, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	if _, err := h.clientConn.Prompt(ctx, acpproto.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acpproto.ContentBlock{acpproto.TextBlock("run failing tool")},
+	}); err != nil {
+		t.Fatalf("prompt failed: %v", err)
+	}
+
+	updates := client.updatesSnapshot()
+	var sawFailed bool
+	for _, update := range updates {
+		if update.SessionId != sess.SessionId || update.Update.ToolCallUpdate == nil {
+			continue
+		}
+		status := update.Update.ToolCallUpdate.Status
+		if status != nil && *status == acpproto.ToolCallStatusFailed {
+			sawFailed = true
+			break
+		}
+	}
+	if !sawFailed {
+		t.Fatalf("expected failed tool_call_update status, got %+v", updates)
+	}
+}
+
+func TestACPInprocSessionAdvertisesAvailableCommands(t *testing.T) {
+	root := t.TempDir()
+	opts := testOptionsForRootWithModel(t, root, stubModel{})
+	opts.Commands = []api.CommandRegistration{
+		{
+			Definition: commands.Definition{
+				Name:        "plan",
+				Description: "Create an implementation plan",
+			},
+			Handler: commands.HandlerFunc(func(context.Context, commands.Invocation) (commands.Result, error) {
+				return commands.Result{Output: "ok"}, nil
+			}),
+		},
+	}
+
+	client := newE2EClient()
+	h := newE2EHarness(t, opts, client)
+	initializeACP(t, h.clientConn, acpproto.ClientCapabilities{})
+
+	sess := mustNewSession(t, h.clientConn, root, nil)
+	requireEventually(t, 2*time.Second, func() bool {
+		updates := client.updatesSnapshot()
+		for _, update := range updates {
+			if update.SessionId != sess.SessionId {
+				continue
+			}
+			available := update.Update.AvailableCommandsUpdate
+			if available == nil {
+				continue
+			}
+			for _, cmd := range available.AvailableCommands {
+				if cmd.Name == "plan" {
+					return true
+				}
+			}
+		}
+		return false
+	}, "available_commands_update notification")
+}
+
+func TestACPInprocLoadSessionForExistingSessionEmitsCommandsUpdate(t *testing.T) {
+	root := t.TempDir()
+	opts := testOptionsForRootWithModel(t, root, stubModel{})
+	opts.Commands = []api.CommandRegistration{
+		{
+			Definition: commands.Definition{
+				Name:        "plan",
+				Description: "Create an implementation plan",
+			},
+			Handler: commands.HandlerFunc(func(context.Context, commands.Invocation) (commands.Result, error) {
+				return commands.Result{Output: "ok"}, nil
+			}),
+		},
+	}
+
+	client := newE2EClient()
+	h := newE2EHarness(t, opts, client)
+	initializeACP(t, h.clientConn, acpproto.ClientCapabilities{})
+	sess := mustNewSession(t, h.clientConn, root, nil)
+	before := len(client.updatesSnapshot())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	loadResp, err := h.clientConn.LoadSession(ctx, acpproto.LoadSessionRequest{
+		SessionId:  sess.SessionId,
+		Cwd:        root,
+		McpServers: []acpproto.McpServer{},
+	})
+	if err != nil {
+		t.Fatalf("load existing session failed: %v", err)
+	}
+	if loadResp.Modes == nil || len(loadResp.ConfigOptions) == 0 {
+		t.Fatalf("load response missing modes/config options")
+	}
+
+	requireEventually(t, 2*time.Second, func() bool {
+		updates := client.updatesSnapshot()
+		if len(updates) <= before {
+			return false
+		}
+		for _, update := range updates[before:] {
+			if update.SessionId != sess.SessionId || update.Update.AvailableCommandsUpdate == nil {
+				continue
+			}
+			for _, cmd := range update.Update.AvailableCommandsUpdate.AvailableCommands {
+				if cmd.Name == "plan" {
+					return true
+				}
+			}
+		}
+		return false
+	}, "available_commands_update after loading existing session")
+}
+
 func TestACPInprocLoadSessionReplayHistory(t *testing.T) {
 	root := t.TempDir()
 	sessionID := acpproto.SessionId("sess-replay")
@@ -296,6 +650,48 @@ func TestACPInprocLoadSessionReplayHistory(t *testing.T) {
 		}
 		return sawUser && sawAgent
 	}, "history replay updates")
+}
+
+func TestACPServeStdioEndToEnd(t *testing.T) {
+	root := t.TempDir()
+	serverSide, clientSide := net.Pipe()
+	client := newE2EClient()
+	opts := testOptionsForRootWithModel(t, root, stubModel{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- ServeStdio(ctx, opts, serverSide, serverSide)
+	}()
+
+	conn := acpproto.NewClientSideConnection(client, clientSide, clientSide)
+	initResp := initializeACP(t, conn, acpproto.ClientCapabilities{})
+	if initResp.ProtocolVersion != acpproto.ProtocolVersionNumber {
+		t.Fatalf("protocolVersion=%d, want %d", initResp.ProtocolVersion, acpproto.ProtocolVersionNumber)
+	}
+	if _, err := conn.Authenticate(context.Background(), acpproto.AuthenticateRequest{MethodId: "none"}); err != nil {
+		t.Fatalf("authenticate failed: %v", err)
+	}
+	sess := mustNewSession(t, conn, root, nil)
+	if _, err := conn.Prompt(context.Background(), acpproto.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acpproto.ContentBlock{acpproto.TextBlock("hello")},
+	}); err != nil {
+		t.Fatalf("prompt failed: %v", err)
+	}
+
+	_ = clientSide.Close()
+	_ = serverSide.Close()
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatalf("serve stdio failed: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting for ServeStdio to exit")
+	}
 }
 
 func TestACPInprocCancelAndConcurrentPrompt(t *testing.T) {
@@ -549,6 +945,128 @@ func TestACPInprocCapabilityBridgeReadWriteBash(t *testing.T) {
 	if runtime.GOOS == "windows" && !strings.EqualFold(creates[0].Command, "cmd") {
 		t.Fatalf("windows terminal command=%q, want cmd", creates[0].Command)
 	}
+
+	updates := client.updatesSnapshot()
+	var sawToolCall bool
+	var sawInProgress bool
+	var sawCompleted bool
+	var sawTerminalContent bool
+	for _, update := range updates {
+		if update.SessionId != sess.SessionId {
+			continue
+		}
+		if update.Update.ToolCall != nil {
+			sawToolCall = true
+		}
+		if update.Update.ToolCallUpdate == nil {
+			continue
+		}
+		if update.Update.ToolCallUpdate.Status != nil {
+			switch *update.Update.ToolCallUpdate.Status {
+			case acpproto.ToolCallStatusInProgress:
+				sawInProgress = true
+			case acpproto.ToolCallStatusCompleted:
+				sawCompleted = true
+			}
+		}
+		for _, content := range update.Update.ToolCallUpdate.Content {
+			if content.Terminal != nil && strings.TrimSpace(content.Terminal.TerminalId) != "" {
+				sawTerminalContent = true
+			}
+		}
+	}
+	if !sawToolCall || !sawInProgress || !sawCompleted {
+		t.Fatalf("expected tool lifecycle updates; got start=%v in_progress=%v completed=%v", sawToolCall, sawInProgress, sawCompleted)
+	}
+	if !sawTerminalContent {
+		t.Fatalf("expected terminal content in tool_call_update")
+	}
+}
+
+func TestACPInprocTaskToolsEmitPlanUpdates(t *testing.T) {
+	root := t.TempDir()
+	taskStore := tasks.NewTaskStore()
+	seedTask, err := taskStore.Create("Seed task", "seed description", "seed-form")
+	if err != nil {
+		t.Fatalf("seed task create failed: %v", err)
+	}
+
+	model := newToolPlanModel([]toolPlanStep{
+		{
+			ToolName: "TaskCreate",
+			Args: map[string]any{
+				"subject":    "Generated task",
+				"activeForm": "generated-form",
+			},
+		},
+		{
+			ToolName: "TaskUpdate",
+			Args: map[string]any{
+				"taskId": seedTask.ID,
+				"status": "in_progress",
+			},
+		},
+		{
+			ToolName: "TaskGet",
+			Args: map[string]any{
+				"taskId": seedTask.ID,
+			},
+		},
+		{
+			ToolName: "TaskList",
+			Args: map[string]any{
+				"status": "in_progress",
+			},
+		},
+	})
+
+	opts := testOptionsForRootWithModel(t, root, model)
+	opts.TaskStore = taskStore
+	client := newE2EClient()
+	h := newE2EHarness(t, opts, client)
+	initializeACP(t, h.clientConn, acpproto.ClientCapabilities{})
+	sess := mustNewSession(t, h.clientConn, root, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	resp, err := h.clientConn.Prompt(ctx, acpproto.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acpproto.ContentBlock{acpproto.TextBlock("manage tasks and keep plan updated")},
+	})
+	if err != nil {
+		t.Fatalf("prompt failed: %v", err)
+	}
+	if resp.StopReason != acpproto.StopReasonEndTurn {
+		t.Fatalf("stopReason=%q, want %q", resp.StopReason, acpproto.StopReasonEndTurn)
+	}
+
+	updates := client.updatesSnapshot()
+	var sawPlanUpdate bool
+	var sawSeedTaskEntry bool
+	var sawGeneratedTaskEntry bool
+	for _, update := range updates {
+		if update.SessionId != sess.SessionId || update.Update.Plan == nil {
+			continue
+		}
+		sawPlanUpdate = true
+		for _, entry := range update.Update.Plan.Entries {
+			if entry.Content == "Seed task" && entry.Status == acpproto.PlanEntryStatusInProgress {
+				sawSeedTaskEntry = true
+			}
+			if strings.Contains(entry.Content, "Task ") {
+				sawGeneratedTaskEntry = true
+			}
+		}
+	}
+	if !sawPlanUpdate {
+		t.Fatalf("expected plan session updates from task tools")
+	}
+	if !sawSeedTaskEntry {
+		t.Fatalf("expected in_progress plan entry for seed task, got %+v", updates)
+	}
+	if !sawGeneratedTaskEntry {
+		t.Fatalf("expected generated task plan entry from TaskCreate, got %+v", updates)
+	}
 }
 
 func TestACPInprocArchitectModeBlocksMutatingCapabilityTools(t *testing.T) {
@@ -587,10 +1105,12 @@ func TestACPInprocArchitectModeBlocksMutatingCapabilityTools(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	_, _ = h.clientConn.Prompt(ctx, acpproto.PromptRequest{
+	if _, err := h.clientConn.Prompt(ctx, acpproto.PromptRequest{
 		SessionId: sess.SessionId,
 		Prompt:    []acpproto.ContentBlock{acpproto.TextBlock("attempt mutations")},
-	})
+	}); err != nil {
+		t.Fatalf("prompt failed: %v", err)
+	}
 
 	if writes := client.writeRequestsSnapshot(); len(writes) != 0 {
 		t.Fatalf("architect mode should block write capability; got %d write requests", len(writes))
@@ -692,6 +1212,110 @@ func cloneMap(input map[string]any) map[string]any {
 		out[key] = value
 	}
 	return out
+}
+
+type capturingModel struct {
+	mu   sync.Mutex
+	reqs []model.Request
+}
+
+func (m *capturingModel) Complete(ctx context.Context, req model.Request) (*model.Response, error) {
+	var final *model.Response
+	err := m.CompleteStream(ctx, req, func(sr model.StreamResult) error {
+		if sr.Final && sr.Response != nil {
+			final = sr.Response
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if final == nil {
+		return nil, errors.New("capturingModel: no final response")
+	}
+	return final, nil
+}
+
+func (m *capturingModel) CompleteStream(_ context.Context, req model.Request, cb model.StreamHandler) error {
+	m.mu.Lock()
+	m.reqs = append(m.reqs, cloneModelRequest(req))
+	m.mu.Unlock()
+
+	if cb == nil {
+		return nil
+	}
+	return cb(model.StreamResult{
+		Delta: "ok",
+		Final: true,
+		Response: &model.Response{
+			Message: model.Message{
+				Role:    "assistant",
+				Content: "ok",
+			},
+			StopReason: "end_turn",
+		},
+	})
+}
+
+func (m *capturingModel) lastRequest() (model.Request, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.reqs) == 0 {
+		return model.Request{}, false
+	}
+	return cloneModelRequest(m.reqs[len(m.reqs)-1]), true
+}
+
+func cloneModelRequest(req model.Request) model.Request {
+	cp := req
+	if len(req.Messages) > 0 {
+		cp.Messages = make([]model.Message, len(req.Messages))
+		for i, msg := range req.Messages {
+			cp.Messages[i] = msg
+			if len(msg.ContentBlocks) > 0 {
+				cp.Messages[i].ContentBlocks = append([]model.ContentBlock(nil), msg.ContentBlocks...)
+			}
+			if len(msg.ToolCalls) > 0 {
+				cp.Messages[i].ToolCalls = append([]model.ToolCall(nil), msg.ToolCalls...)
+			}
+		}
+	}
+	if len(req.Tools) > 0 {
+		cp.Tools = append([]model.ToolDefinition(nil), req.Tools...)
+	}
+	return cp
+}
+
+type scriptedTool struct {
+	name string
+	exec func(context.Context, map[string]interface{}) (*tool.ToolResult, error)
+}
+
+func (t *scriptedTool) Name() string {
+	if t == nil {
+		return ""
+	}
+	return t.name
+}
+
+func (t *scriptedTool) Description() string {
+	if t == nil {
+		return ""
+	}
+	return "scripted e2e tool"
+}
+
+func (t *scriptedTool) Schema() *tool.JSONSchema {
+	return &tool.JSONSchema{
+		Type: "object",
+	}
+}
+
+func (t *scriptedTool) Execute(ctx context.Context, params map[string]interface{}) (*tool.ToolResult, error) {
+	if t == nil || t.exec == nil {
+		return &tool.ToolResult{Success: true, Output: "ok"}, nil
+	}
+	return t.exec(ctx, params)
 }
 
 type e2eClient struct {

@@ -10,6 +10,8 @@ import (
 	"sync"
 
 	"github.com/cexll/agentsdk-go/pkg/api"
+	"github.com/cexll/agentsdk-go/pkg/config"
+	"github.com/cexll/agentsdk-go/pkg/tool"
 	acpproto "github.com/coder/acp-go-sdk"
 	"github.com/google/uuid"
 )
@@ -105,6 +107,9 @@ func (a *Adapter) NewSession(ctx context.Context, params acpproto.NewSessionRequ
 		return acpproto.NewSessionResponse{}, err
 	}
 	a.registerSession(state)
+	if err := a.emitAvailableCommandsUpdate(ctx, sessionID, state); err != nil {
+		return acpproto.NewSessionResponse{}, err
+	}
 
 	return acpproto.NewSessionResponse{
 		SessionId:     sessionID,
@@ -130,6 +135,9 @@ func (a *Adapter) LoadSession(ctx context.Context, params acpproto.LoadSessionRe
 	}
 
 	if existing, ok := a.sessionByID(params.SessionId); ok {
+		if err := a.emitAvailableCommandsUpdate(ctx, params.SessionId, existing); err != nil {
+			return acpproto.LoadSessionResponse{}, err
+		}
 		return acpproto.LoadSessionResponse{
 			Modes:         existing.snapshotModes(),
 			ConfigOptions: existing.snapshotConfigOptions(),
@@ -159,6 +167,9 @@ func (a *Adapter) LoadSession(ctx context.Context, params acpproto.LoadSessionRe
 		if err := a.emitSessionUpdate(ctx, params.SessionId, update); err != nil {
 			return acpproto.LoadSessionResponse{}, err
 		}
+	}
+	if err := a.emitAvailableCommandsUpdate(ctx, params.SessionId, state); err != nil {
+		return acpproto.LoadSessionResponse{}, err
 	}
 
 	return acpproto.LoadSessionResponse{
@@ -221,15 +232,11 @@ func (a *Adapter) Prompt(ctx context.Context, params acpproto.PromptRequest) (ac
 		return acpproto.PromptResponse{}, err
 	}
 
+	streamMapper := newPromptStreamMapper()
 	stopReason := acpproto.StopReasonEndTurn
 	for evt := range stream {
-		if delta := extractTextDelta(evt); delta != "" {
-			err := a.emitSessionUpdate(turnCtx, params.SessionId, acpproto.SessionUpdate{
-				AgentMessageChunk: &acpproto.SessionUpdateAgentMessageChunk{
-					SessionUpdate: "agent_message_chunk",
-					Content:       acpproto.TextBlock(delta),
-				},
-			})
+		for _, update := range streamMapper.updatesForEvent(evt) {
+			err := a.emitSessionUpdate(turnCtx, params.SessionId, update)
 			if err != nil {
 				if errors.Is(err, context.Canceled) || errors.Is(turnCtx.Err(), context.Canceled) {
 					return acpproto.PromptResponse{StopReason: acpproto.StopReasonCancelled}, nil
@@ -360,17 +367,22 @@ func (a *Adapter) createSession(ctx context.Context, sessionID acpproto.SessionI
 
 	opts := a.opts
 	opts.ProjectRoot = cwd
-	mergedMCPSpecs, err := mergeMCPServerSpecs(a.opts.MCPServers, requestedMCPServers)
+	opts.MCPServers = append([]string(nil), a.opts.MCPServers...)
+
+	requestedSettings, err := requestedMCPSettingsOverride(requestedMCPServers)
 	if err != nil {
 		return nil, acpproto.NewInvalidParams(map[string]any{
 			"mcpServers": err.Error(),
 		})
 	}
-	opts.MCPServers = mergedMCPSpecs
-	bridgeTools, shadowed := buildClientCapabilityTools(sessionID, a.connection, a.clientCapabilities())
+	if requestedSettings != nil {
+		opts.SettingsOverrides = config.MergeSettings(opts.SettingsOverrides, requestedSettings)
+	}
+	bridgeTools, shadowedBuiltinKeys := buildClientCapabilityTools(sessionID, a.connection, a.clientCapabilities())
 	if len(bridgeTools) > 0 {
-		opts.CustomTools = append(opts.CustomTools, bridgeTools...)
-		opts.EnabledBuiltinTools = filterEnabledBuiltinsForBridge(opts, shadowed)
+		selectedBuiltin := api.EnabledBuiltinToolKeys(opts)
+		opts.EnabledBuiltinTools = filterShadowedBuiltinToolKeys(selectedBuiltin, shadowedBuiltinKeys)
+		opts.CustomTools = mergeToolsWithBridge(opts.CustomTools, bridgeTools)
 	}
 	basePermissionHandler := opts.PermissionRequestHandler
 	opts.PermissionRequestHandler = a.newPermissionBridge(state, basePermissionHandler)
@@ -420,6 +432,35 @@ func (a *Adapter) emitSessionUpdate(ctx context.Context, sessionID acpproto.Sess
 	})
 }
 
+func (a *Adapter) emitAvailableCommandsUpdate(ctx context.Context, sessionID acpproto.SessionId, state *sessionState) error {
+	if state == nil {
+		return nil
+	}
+	rt := state.runtime()
+	if rt == nil {
+		return nil
+	}
+	commands := rt.AvailableCommands()
+	available := make([]acpproto.AvailableCommand, 0, len(commands))
+	for _, command := range commands {
+		name := strings.TrimSpace(command.Name)
+		if name == "" {
+			continue
+		}
+		available = append(available, acpproto.AvailableCommand{
+			Name:        name,
+			Description: strings.TrimSpace(command.Description),
+		})
+	}
+
+	return a.emitSessionUpdate(ctx, sessionID, acpproto.SessionUpdate{
+		AvailableCommandsUpdate: &acpproto.SessionAvailableCommandsUpdate{
+			SessionUpdate:     "available_commands_update",
+			AvailableCommands: available,
+		},
+	})
+}
+
 func (a *Adapter) connection() *acpproto.AgentSideConnection {
 	if a == nil {
 		return nil
@@ -466,4 +507,61 @@ func validateSessionCWD(cwd string) (string, error) {
 
 func sessionKey(id acpproto.SessionId) string {
 	return strings.TrimSpace(string(id))
+}
+
+func filterShadowedBuiltinToolKeys(selected []string, shadowed []string) []string {
+	if len(selected) == 0 || len(shadowed) == 0 {
+		return selected
+	}
+	blocked := make(map[string]struct{}, len(shadowed))
+	for _, name := range shadowed {
+		key := canonicalBuiltinToolKey(name)
+		if key == "" {
+			continue
+		}
+		blocked[key] = struct{}{}
+	}
+	if len(blocked) == 0 {
+		return selected
+	}
+	out := make([]string, 0, len(selected))
+	for _, name := range selected {
+		if _, skip := blocked[canonicalBuiltinToolKey(name)]; skip {
+			continue
+		}
+		out = append(out, name)
+	}
+	return out
+}
+
+func canonicalBuiltinToolKey(name string) string {
+	key := strings.ToLower(strings.TrimSpace(name))
+	return strings.NewReplacer("-", "_", " ", "_").Replace(key)
+}
+
+func mergeToolsWithBridge(base []tool.Tool, bridge []tool.Tool) []tool.Tool {
+	if len(bridge) == 0 {
+		return base
+	}
+	bridgeSet := make(map[string]struct{}, len(bridge))
+	for _, impl := range bridge {
+		if impl == nil {
+			continue
+		}
+		if key := canonicalACPToolName(impl.Name()); key != "" {
+			bridgeSet[key] = struct{}{}
+		}
+	}
+
+	out := make([]tool.Tool, 0, len(base)+len(bridge))
+	for _, impl := range base {
+		if impl == nil {
+			continue
+		}
+		if _, shadowed := bridgeSet[canonicalACPToolName(impl.Name())]; shadowed {
+			continue
+		}
+		out = append(out, impl)
+	}
+	return append(out, bridge...)
 }

@@ -9,109 +9,28 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cexll/agentsdk-go/pkg/api"
 	"github.com/cexll/agentsdk-go/pkg/tool"
 	acpproto "github.com/coder/acp-go-sdk"
 )
 
 func buildClientCapabilityTools(sessionID acpproto.SessionId, connFn func() *acpproto.AgentSideConnection, caps acpproto.ClientCapabilities) ([]tool.Tool, []string) {
 	tools := make([]tool.Tool, 0, 3)
-	disallowed := make([]string, 0, 3)
+	shadowBuiltinKeys := make([]string, 0, 3)
 
 	if caps.Fs.ReadTextFile {
 		tools = append(tools, &acpReadTool{sessionID: sessionID, conn: connFn})
-		disallowed = append(disallowed, "Read")
+		shadowBuiltinKeys = append(shadowBuiltinKeys, "file_read")
 	}
 	if caps.Fs.WriteTextFile {
 		tools = append(tools, &acpWriteTool{sessionID: sessionID, conn: connFn})
-		disallowed = append(disallowed, "Write")
+		shadowBuiltinKeys = append(shadowBuiltinKeys, "file_write")
 	}
 	if caps.Terminal {
 		tools = append(tools, &acpBashTool{sessionID: sessionID, conn: connFn})
-		disallowed = append(disallowed, "Bash")
+		shadowBuiltinKeys = append(shadowBuiltinKeys, "bash")
 	}
 
-	return tools, disallowed
-}
-
-func filterEnabledBuiltinsForBridge(opts api.Options, shadowedToolNames []string) []string {
-	if len(shadowedToolNames) == 0 {
-		return opts.EnabledBuiltinTools
-	}
-
-	shadowedBuiltins := make(map[string]struct{}, len(shadowedToolNames))
-	for _, name := range shadowedToolNames {
-		switch strings.ToLower(strings.TrimSpace(name)) {
-		case "read":
-			shadowedBuiltins["file_read"] = struct{}{}
-		case "write":
-			shadowedBuiltins["file_write"] = struct{}{}
-		case "bash":
-			shadowedBuiltins["bash"] = struct{}{}
-		}
-	}
-	if len(shadowedBuiltins) == 0 {
-		return opts.EnabledBuiltinTools
-	}
-
-	enabled := opts.EnabledBuiltinTools
-	if enabled == nil {
-		enabled = defaultBuiltinOrder(resolveEntryPoint(opts))
-	}
-
-	filtered := make([]string, 0, len(enabled))
-	for _, name := range enabled {
-		key := canonicalBuiltinName(name)
-		if _, blocked := shadowedBuiltins[key]; blocked {
-			continue
-		}
-		filtered = append(filtered, name)
-	}
-	return filtered
-}
-
-func resolveEntryPoint(opts api.Options) api.EntryPoint {
-	entry := opts.EntryPoint
-	if entry == "" {
-		entry = opts.Mode.EntryPoint
-	}
-	if entry == "" {
-		entry = api.EntryPointCLI
-	}
-	return entry
-}
-
-func defaultBuiltinOrder(entry api.EntryPoint) []string {
-	order := []string{
-		"bash",
-		"file_read",
-		"file_write",
-		"file_edit",
-		"web_fetch",
-		"web_search",
-		"bash_output",
-		"bash_status",
-		"kill_task",
-		"task_create",
-		"task_list",
-		"task_get",
-		"task_update",
-		"ask_user_question",
-		"skill",
-		"slash_command",
-		"grep",
-		"glob",
-	}
-	if entry == api.EntryPointCLI || entry == api.EntryPointPlatform {
-		order = append(order, "task")
-	}
-	return order
-}
-
-func canonicalBuiltinName(name string) string {
-	key := strings.ToLower(strings.TrimSpace(name))
-	key = strings.NewReplacer("-", "_", " ", "_").Replace(key)
-	return key
+	return tools, shadowBuiltinKeys
 }
 
 var acpReadSchema = &tool.JSONSchema{
@@ -276,7 +195,7 @@ func (t *acpBashTool) Description() string {
 
 func (t *acpBashTool) Schema() *tool.JSONSchema { return acpBashSchema }
 
-func (t *acpBashTool) Execute(ctx context.Context, params map[string]interface{}) (*tool.ToolResult, error) {
+func (t *acpBashTool) Execute(ctx context.Context, params map[string]interface{}) (result *tool.ToolResult, err error) {
 	conn := t.currentConnection()
 	if conn == nil {
 		return nil, errors.New("acp bash: connection is not available")
@@ -313,10 +232,20 @@ func (t *acpBashTool) Execute(ctx context.Context, params map[string]interface{}
 		return nil, errors.New("acp create_terminal returned empty terminal id")
 	}
 	defer func() {
-		_, _ = conn.ReleaseTerminal(context.Background(), acpproto.ReleaseTerminalRequest{
+		_, releaseErr := conn.ReleaseTerminal(context.Background(), acpproto.ReleaseTerminalRequest{
 			SessionId:  t.sessionID,
 			TerminalId: terminalID,
 		})
+		if releaseErr != nil {
+			if err == nil {
+				err = fmt.Errorf("acp release_terminal: %w", releaseErr)
+				if result == nil {
+					result = &tool.ToolResult{Success: false}
+				}
+				return
+			}
+			err = errors.Join(err, fmt.Errorf("acp release_terminal: %w", releaseErr))
+		}
 	}()
 
 	waitCtx := ctx
@@ -332,10 +261,16 @@ func (t *acpBashTool) Execute(ctx context.Context, params map[string]interface{}
 	})
 	if waitErr != nil {
 		if errors.Is(waitErr, context.DeadlineExceeded) {
-			_, _ = conn.KillTerminalCommand(context.Background(), acpproto.KillTerminalCommandRequest{
+			_, killErr := conn.KillTerminalCommand(context.Background(), acpproto.KillTerminalCommandRequest{
 				SessionId:  t.sessionID,
 				TerminalId: terminalID,
 			})
+			if killErr != nil {
+				return nil, errors.Join(
+					fmt.Errorf("acp wait_for_terminal_exit: %w", waitErr),
+					fmt.Errorf("acp kill_terminal_command: %w", killErr),
+				)
+			}
 		}
 		return nil, fmt.Errorf("acp wait_for_terminal_exit: %w", waitErr)
 	}
@@ -352,7 +287,7 @@ func (t *acpBashTool) Execute(ctx context.Context, params map[string]interface{}
 		"terminal_id": terminalID,
 		"truncated":   outputResp.Truncated,
 	}
-	result := &tool.ToolResult{
+	result = &tool.ToolResult{
 		Success: true,
 		Output:  outputResp.Output,
 		Data:    resultData,

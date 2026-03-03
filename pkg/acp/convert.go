@@ -50,17 +50,48 @@ func convertPromptBlocks(prompt []acpproto.ContentBlock) (string, []model.Conten
 			uri := strings.TrimSpace(block.ResourceLink.Uri)
 			if uri != "" {
 				textParts = append(textParts, fmt.Sprintf("Resource: %s", uri))
+				contentBlocks = append(contentBlocks, model.ContentBlock{
+					Type:      model.ContentBlockDocument,
+					MediaType: strings.TrimSpace(derefString(block.ResourceLink.MimeType)),
+					URL:       uri,
+				})
 			}
 
-		case block.Resource != nil && block.Resource.Resource.TextResourceContents != nil:
-			resource := block.Resource.Resource.TextResourceContents
-			if text := strings.TrimSpace(resource.Text); text != "" {
-				textParts = append(textParts, text)
+		case block.Resource != nil:
+			switch {
+			case block.Resource.Resource.TextResourceContents != nil:
+				resource := block.Resource.Resource.TextResourceContents
+				if text := strings.TrimSpace(resource.Text); text != "" {
+					textParts = append(textParts, text)
+				}
+				if uri := strings.TrimSpace(resource.Uri); uri != "" {
+					textParts = append(textParts, fmt.Sprintf("Resource: %s", uri))
+				}
+
+			case block.Resource.Resource.BlobResourceContents != nil:
+				resource := block.Resource.Resource.BlobResourceContents
+				if data := strings.TrimSpace(resource.Blob); data != "" {
+					contentBlocks = append(contentBlocks, model.ContentBlock{
+						Type:      model.ContentBlockDocument,
+						MediaType: strings.TrimSpace(derefString(resource.MimeType)),
+						Data:      data,
+					})
+				}
+				if uri := strings.TrimSpace(resource.Uri); uri != "" {
+					textParts = append(textParts, fmt.Sprintf("Resource: %s", uri))
+				}
 			}
 		}
 	}
 
 	return strings.TrimSpace(strings.Join(textParts, "\n")), contentBlocks
+}
+
+func derefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func extractTextDelta(evt api.StreamEvent) string {

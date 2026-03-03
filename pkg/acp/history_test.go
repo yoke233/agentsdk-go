@@ -105,3 +105,146 @@ func TestHistoryMessagesToSessionUpdates(t *testing.T) {
 		)
 	}
 }
+
+func TestHistoryMessagesToSessionUpdatesIncludesImageContent(t *testing.T) {
+	t.Parallel()
+
+	msgs := []message.Message{
+		{
+			Role: "assistant",
+			ContentBlocks: []message.ContentBlock{
+				{
+					Type:      message.ContentBlockImage,
+					MediaType: "image/png",
+					Data:      "aGVsbG8=",
+				},
+			},
+		},
+	}
+
+	updates := historyMessagesToSessionUpdates(msgs)
+	if len(updates) != 1 {
+		t.Fatalf("updates len=%d, want 1", len(updates))
+	}
+	if updates[0].AgentMessageChunk == nil {
+		t.Fatalf("expected agent message update, got %+v", updates[0])
+	}
+	if updates[0].AgentMessageChunk.Content.Image == nil {
+		t.Fatalf("expected image content block, got %+v", updates[0].AgentMessageChunk.Content)
+	}
+	if updates[0].AgentMessageChunk.Content.Image.MimeType != "image/png" {
+		t.Fatalf("image mimeType=%q, want %q", updates[0].AgentMessageChunk.Content.Image.MimeType, "image/png")
+	}
+}
+
+func TestMessageBlockToContentBlock(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		block message.ContentBlock
+		valid bool
+		check func(t *testing.T, content acpproto.ContentBlock)
+	}{
+		{
+			name:  "text",
+			block: message.ContentBlock{Type: message.ContentBlockText, Text: "hello"},
+			valid: true,
+			check: func(t *testing.T, content acpproto.ContentBlock) {
+				t.Helper()
+				if content.Text == nil || content.Text.Text != "hello" {
+					t.Fatalf("unexpected text content: %+v", content)
+				}
+			},
+		},
+		{
+			name:  "image_data",
+			block: message.ContentBlock{Type: message.ContentBlockImage, Data: "aGVsbG8=", MediaType: "image/png"},
+			valid: true,
+			check: func(t *testing.T, content acpproto.ContentBlock) {
+				t.Helper()
+				if content.Image == nil || content.Image.Data != "aGVsbG8=" {
+					t.Fatalf("unexpected image content: %+v", content)
+				}
+			},
+		},
+		{
+			name:  "image_url",
+			block: message.ContentBlock{Type: message.ContentBlockImage, URL: "file:///tmp/a.png"},
+			valid: true,
+			check: func(t *testing.T, content acpproto.ContentBlock) {
+				t.Helper()
+				if content.ResourceLink == nil || content.ResourceLink.Uri != "file:///tmp/a.png" {
+					t.Fatalf("unexpected image url content: %+v", content)
+				}
+			},
+		},
+		{
+			name:  "document_url",
+			block: message.ContentBlock{Type: message.ContentBlockDocument, URL: "file:///tmp/a.pdf"},
+			valid: true,
+			check: func(t *testing.T, content acpproto.ContentBlock) {
+				t.Helper()
+				if content.ResourceLink == nil || content.ResourceLink.Uri != "file:///tmp/a.pdf" {
+					t.Fatalf("unexpected document url content: %+v", content)
+				}
+			},
+		},
+		{
+			name:  "document_text_fallback",
+			block: message.ContentBlock{Type: message.ContentBlockDocument, Text: "doc text"},
+			valid: true,
+			check: func(t *testing.T, content acpproto.ContentBlock) {
+				t.Helper()
+				if content.Text == nil || content.Text.Text != "doc text" {
+					t.Fatalf("unexpected document text fallback: %+v", content)
+				}
+			},
+		},
+		{
+			name:  "unknown_type_text_fallback",
+			block: message.ContentBlock{Type: "unknown", Text: "fallback"},
+			valid: true,
+			check: func(t *testing.T, content acpproto.ContentBlock) {
+				t.Helper()
+				if content.Text == nil || content.Text.Text != "fallback" {
+					t.Fatalf("unexpected unknown-type fallback: %+v", content)
+				}
+			},
+		},
+		{
+			name:  "invalid_empty",
+			block: message.ContentBlock{Type: message.ContentBlockImage},
+			valid: false,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			content, ok := messageBlockToContentBlock(tc.block)
+			if ok != tc.valid {
+				t.Fatalf("valid=%v, want %v content=%+v", ok, tc.valid, content)
+			}
+			if tc.valid && tc.check != nil {
+				tc.check(t, content)
+			}
+		})
+	}
+}
+
+func TestNormalizedToolCallID(t *testing.T) {
+	t.Parallel()
+
+	counter := 0
+	if got := normalizedToolCallID("tool-x", &counter); got != "tool-x" {
+		t.Fatalf("explicit id=%q, want %q", got, "tool-x")
+	}
+	if got := normalizedToolCallID("  ", &counter); got != "tool_call_1" {
+		t.Fatalf("generated id=%q, want %q", got, "tool_call_1")
+	}
+	if got := normalizedToolCallID("", nil); got != "tool_call" {
+		t.Fatalf("nil counter id=%q, want %q", got, "tool_call")
+	}
+}

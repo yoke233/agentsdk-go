@@ -16,6 +16,15 @@ Session mode behavior in this adapter:
 
 `modes` and `configOptions` (with `id: "mode"` / `category: "mode"`) are kept in sync for compatibility with both old and new ACP clients.
 
+Protocol behavior highlights:
+
+- `session/prompt` accepts ACP `ContentBlock[]`, including text, image, and embedded resource payloads
+- `session/update` emits:
+  - `agent_message_chunk` for streamed text output
+  - `tool_call` + `tool_call_update` for tool lifecycle (`pending`/`in_progress`/`completed`/`failed`)
+  - terminal/tool output content (including `terminal` tool content references when available)
+  - `available_commands_update` after session creation/load, sourced from agentsdk-go's slash command registry
+
 ## 1) CLI Stdio Mode
 
 Use the existing CLI entrypoint:
