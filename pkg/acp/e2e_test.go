@@ -983,6 +983,61 @@ func TestACPInprocCapabilityBridgeReadWriteBash(t *testing.T) {
 	}
 }
 
+func TestACPInprocCapabilityBridgeEditUsesClientFs(t *testing.T) {
+	root := t.TempDir()
+	client := newE2EClient()
+	client.readContent = "alpha beta beta"
+
+	caps := acpproto.ClientCapabilities{}
+	caps.Fs.ReadTextFile = true
+	caps.Fs.WriteTextFile = true
+
+	model := newToolPlanModel([]toolPlanStep{
+		{
+			ToolName: "Edit",
+			Args: map[string]any{
+				"file_path":   filepath.Join(root, "edit.txt"),
+				"old_string":  "beta",
+				"new_string":  "gamma",
+				"replace_all": true,
+			},
+		},
+	})
+
+	h := newE2EHarness(t, testOptionsForRootWithModel(t, root, model), client)
+	initializeACP(t, h.clientConn, caps)
+	sess := mustNewSession(t, h.clientConn, root, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	resp, err := h.clientConn.Prompt(ctx, acpproto.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acpproto.ContentBlock{acpproto.TextBlock("edit through client fs capability")},
+	})
+	if err != nil {
+		t.Fatalf("prompt failed: %v", err)
+	}
+	if resp.StopReason != acpproto.StopReasonEndTurn {
+		t.Fatalf("stopReason=%q, want %q", resp.StopReason, acpproto.StopReasonEndTurn)
+	}
+
+	readReqs := client.readRequestsSnapshot()
+	if len(readReqs) == 0 {
+		t.Fatalf("expected fs/read_text_file requests for Edit")
+	}
+	if readReqs[0].SessionId != sess.SessionId {
+		t.Fatalf("read sessionId=%q, want %q", readReqs[0].SessionId, sess.SessionId)
+	}
+
+	writeReqs := client.writeRequestsSnapshot()
+	if len(writeReqs) == 0 {
+		t.Fatalf("expected fs/write_text_file requests for Edit")
+	}
+	if got, want := writeReqs[0].Content, "alpha gamma gamma"; got != want {
+		t.Fatalf("write content=%q, want %q", got, want)
+	}
+}
+
 func TestACPInprocTaskToolsEmitPlanUpdates(t *testing.T) {
 	root := t.TempDir()
 	taskStore := tasks.NewTaskStore()

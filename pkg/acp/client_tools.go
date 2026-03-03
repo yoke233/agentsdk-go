@@ -14,8 +14,8 @@ import (
 )
 
 func buildClientCapabilityTools(sessionID acpproto.SessionId, connFn func() *acpproto.AgentSideConnection, caps acpproto.ClientCapabilities) ([]tool.Tool, []string) {
-	tools := make([]tool.Tool, 0, 3)
-	shadowBuiltinKeys := make([]string, 0, 3)
+	tools := make([]tool.Tool, 0, 4)
+	shadowBuiltinKeys := make([]string, 0, 4)
 
 	if caps.Fs.ReadTextFile {
 		tools = append(tools, &acpReadTool{sessionID: sessionID, conn: connFn})
@@ -23,7 +23,11 @@ func buildClientCapabilityTools(sessionID acpproto.SessionId, connFn func() *acp
 	}
 	if caps.Fs.WriteTextFile {
 		tools = append(tools, &acpWriteTool{sessionID: sessionID, conn: connFn})
-		shadowBuiltinKeys = append(shadowBuiltinKeys, "file_write")
+		// Edit is mutating too; keep it on the ACP capability path when fs/write is available.
+		shadowBuiltinKeys = append(shadowBuiltinKeys, "file_write", "file_edit")
+	}
+	if caps.Fs.ReadTextFile && caps.Fs.WriteTextFile {
+		tools = append(tools, &acpEditTool{sessionID: sessionID, conn: connFn})
 	}
 	if caps.Terminal {
 		tools = append(tools, &acpBashTool{sessionID: sessionID, conn: connFn})
@@ -159,6 +163,104 @@ func (t *acpWriteTool) Execute(ctx context.Context, params map[string]interface{
 		Data: map[string]any{
 			"path":  path,
 			"bytes": len(content),
+		},
+	}, nil
+}
+
+var acpEditSchema = &tool.JSONSchema{
+	Type: "object",
+	Properties: map[string]any{
+		"file_path": map[string]any{
+			"type":        "string",
+			"description": "Absolute path to the text file to modify.",
+		},
+		"old_string": map[string]any{
+			"type":        "string",
+			"description": "Exact text to replace.",
+		},
+		"new_string": map[string]any{
+			"type":        "string",
+			"description": "Replacement text.",
+		},
+		"replace_all": map[string]any{
+			"type":        "boolean",
+			"default":     false,
+			"description": "Replace all matches when true (default false).",
+		},
+	},
+	Required: []string{"file_path", "old_string", "new_string"},
+}
+
+type acpEditTool struct {
+	sessionID acpproto.SessionId
+	conn      func() *acpproto.AgentSideConnection
+}
+
+func (t *acpEditTool) Name() string { return "Edit" }
+
+func (t *acpEditTool) Description() string {
+	return "Perform exact string replacements via ACP fs/read_text_file and fs/write_text_file."
+}
+
+func (t *acpEditTool) Schema() *tool.JSONSchema { return acpEditSchema }
+
+func (t *acpEditTool) Execute(ctx context.Context, params map[string]interface{}) (*tool.ToolResult, error) {
+	conn := t.currentConnection()
+	if conn == nil {
+		return nil, errors.New("acp edit: connection is not available")
+	}
+	path, err := stringParam(params, "file_path", true)
+	if err != nil {
+		return nil, err
+	}
+	oldString, err := stringParam(params, "old_string", true)
+	if err != nil {
+		return nil, err
+	}
+	if oldString == "" {
+		return nil, errors.New("old_string cannot be empty")
+	}
+	newString, err := stringParam(params, "new_string", true)
+	if err != nil {
+		return nil, err
+	}
+	if oldString == newString {
+		return nil, errors.New("new_string must differ from old_string")
+	}
+	replaceAll, err := optionalBoolParam(params, "replace_all")
+	if err != nil {
+		return nil, err
+	}
+
+	readResp, err := conn.ReadTextFile(ctx, acpproto.ReadTextFileRequest{
+		SessionId: t.sessionID,
+		Path:      path,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("acp read_text_file: %w", err)
+	}
+
+	updated, matches, replaced, err := applyEditReplacement(readResp.Content, oldString, newString, replaceAll)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := conn.WriteTextFile(ctx, acpproto.WriteTextFileRequest{
+		SessionId: t.sessionID,
+		Path:      path,
+		Content:   updated,
+	}); err != nil {
+		return nil, fmt.Errorf("acp write_text_file: %w", err)
+	}
+
+	return &tool.ToolResult{
+		Success: true,
+		Output:  fmt.Sprintf("applied %d replacement(s)", replaced),
+		Data: map[string]any{
+			"path":        path,
+			"matches":     matches,
+			"replaced":    replaced,
+			"replace_all": replaceAll,
 		},
 	}, nil
 }
@@ -319,6 +421,13 @@ func (t *acpWriteTool) currentConnection() *acpproto.AgentSideConnection {
 	return t.conn()
 }
 
+func (t *acpEditTool) currentConnection() *acpproto.AgentSideConnection {
+	if t == nil || t.conn == nil {
+		return nil
+	}
+	return t.conn()
+}
+
 func (t *acpBashTool) currentConnection() *acpproto.AgentSideConnection {
 	if t == nil || t.conn == nil {
 		return nil
@@ -392,6 +501,45 @@ func optionalTimeoutParam(params map[string]interface{}, key string) (time.Durat
 		return 0, nil
 	}
 	return time.Duration(seconds * float64(time.Second)), nil
+}
+
+func optionalBoolParam(params map[string]interface{}, key string) (bool, error) {
+	if params == nil {
+		return false, nil
+	}
+	raw, ok := params[key]
+	if !ok || raw == nil {
+		return false, nil
+	}
+	switch v := raw.(type) {
+	case bool:
+		return v, nil
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "true", "1", "yes", "y":
+			return true, nil
+		case "false", "0", "no", "n":
+			return false, nil
+		default:
+			return false, fmt.Errorf("%s must be a boolean", key)
+		}
+	default:
+		return false, fmt.Errorf("%s must be a boolean", key)
+	}
+}
+
+func applyEditReplacement(content, oldString, newString string, replaceAll bool) (string, int, int, error) {
+	matches := strings.Count(content, oldString)
+	if matches == 0 {
+		return "", 0, 0, errors.New("old_string not found")
+	}
+	if !replaceAll && matches != 1 {
+		return "", matches, 0, fmt.Errorf("old_string must be unique when replace_all is false (found %d matches)", matches)
+	}
+	if replaceAll {
+		return strings.ReplaceAll(content, oldString, newString), matches, matches, nil
+	}
+	return strings.Replace(content, oldString, newString, 1), matches, 1, nil
 }
 
 func toInt(value interface{}) (int, error) {
