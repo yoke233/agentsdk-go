@@ -267,71 +267,110 @@ func TestBuildResponsesInput_MultimodalImageURL(t *testing.T) {
 	assert.Equal(t, "https://example.com/vision.png", parts[0].OfInputImage.ImageURL.Value)
 }
 
-func TestBuildResponsesInput_MultimodalPreservesMessageRoles(t *testing.T) {
+func TestBuildResponsesInput_MultimodalToolMessagePreserved(t *testing.T) {
 	msgs := []Message{
-		{Role: "system", Content: "system context"},
-		{Role: "assistant", Content: "assistant context"},
-		{Role: "developer", Content: "developer context"},
 		{
-			Role: "user",
+			Role:    "user",
+			Content: "describe this",
 			ContentBlocks: []ContentBlock{
-				{Type: ContentBlockImage, URL: "https://example.com/vision.png"},
+				{Type: ContentBlockImage, MediaType: "image/png", Data: "YWJj"},
 			},
+		},
+		{
+			Role:    "assistant",
+			Content: "I'll call a tool",
+		},
+		{
+			Role:    "tool",
+			Content: "tool result data",
+		},
+		{
+			Role:    "user",
+			Content: "thanks",
 		},
 	}
 
 	result := buildResponsesInput(msgs)
+	// All four messages should be present: user, assistant, tool (as user), user
 	require.Len(t, result.OfInputItemList, 4)
 
+	// First item: user with image
 	require.NotNil(t, result.OfInputItemList[0].OfMessage)
-	assert.Equal(t, responses.EasyInputMessageRoleSystem, result.OfInputItemList[0].OfMessage.Role)
+	assert.Equal(t, responses.EasyInputMessageRoleUser, result.OfInputItemList[0].OfMessage.Role)
 
+	// Second item: assistant
 	require.NotNil(t, result.OfInputItemList[1].OfMessage)
 	assert.Equal(t, responses.EasyInputMessageRoleAssistant, result.OfInputItemList[1].OfMessage.Role)
 
+	// Third item: tool mapped to user
 	require.NotNil(t, result.OfInputItemList[2].OfMessage)
-	assert.Equal(t, responses.EasyInputMessageRoleDeveloper, result.OfInputItemList[2].OfMessage.Role)
+	assert.Equal(t, responses.EasyInputMessageRoleUser, result.OfInputItemList[2].OfMessage.Role)
+	toolParts := result.OfInputItemList[2].OfMessage.Content.OfInputItemContentList
+	require.Len(t, toolParts, 1)
+	require.NotNil(t, toolParts[0].OfInputText)
+	assert.Equal(t, "tool result data", toolParts[0].OfInputText.Text)
 
+	// Fourth item: user
 	require.NotNil(t, result.OfInputItemList[3].OfMessage)
 	assert.Equal(t, responses.EasyInputMessageRoleUser, result.OfInputItemList[3].OfMessage.Role)
 }
 
-func TestBuildResponsesInput_MultimodalPreservesToolHistory(t *testing.T) {
+func TestBuildResponsesInput_MultimodalSystemAndUnknownRoles(t *testing.T) {
 	msgs := []Message{
 		{
-			Role: "assistant",
-			ToolCalls: []ToolCall{
-				{ID: "call_1", Name: "get_weather", Arguments: map[string]any{"city": "Tokyo"}},
-			},
-		},
-		{
-			Role: "tool",
-			ToolCalls: []ToolCall{
-				{ID: "call_1", Result: `{"temp":25}`},
-			},
-		},
-		{
-			Role: "user",
+			Role:    "system",
+			Content: "system instructions",
 			ContentBlocks: []ContentBlock{
-				{Type: ContentBlockImage, URL: "https://example.com/vision.png"},
+				{Type: ContentBlockImage, MediaType: "image/png", Data: "YWJj"},
 			},
+		},
+		{
+			Role:    "developer",
+			Content: "dev instructions",
+		},
+		{
+			Role:    "custom_role",
+			Content: "unknown role text",
 		},
 	}
 
 	result := buildResponsesInput(msgs)
 	require.Len(t, result.OfInputItemList, 3)
 
-	require.NotNil(t, result.OfInputItemList[0].OfFunctionCall)
-	assert.Equal(t, "call_1", result.OfInputItemList[0].OfFunctionCall.CallID)
-	assert.Equal(t, "get_weather", result.OfInputItemList[0].OfFunctionCall.Name)
-	assert.JSONEq(t, `{"city":"Tokyo"}`, result.OfInputItemList[0].OfFunctionCall.Arguments)
+	// system → developer role
+	require.NotNil(t, result.OfInputItemList[0].OfMessage)
+	assert.Equal(t, responses.EasyInputMessageRoleDeveloper, result.OfInputItemList[0].OfMessage.Role)
 
-	require.NotNil(t, result.OfInputItemList[1].OfFunctionCallOutput)
-	assert.Equal(t, "call_1", result.OfInputItemList[1].OfFunctionCallOutput.CallID)
-	assert.Equal(t, `{"temp":25}`, result.OfInputItemList[1].OfFunctionCallOutput.Output)
+	// developer → developer role
+	require.NotNil(t, result.OfInputItemList[1].OfMessage)
+	assert.Equal(t, responses.EasyInputMessageRoleDeveloper, result.OfInputItemList[1].OfMessage.Role)
 
+	// unknown → user role
 	require.NotNil(t, result.OfInputItemList[2].OfMessage)
 	assert.Equal(t, responses.EasyInputMessageRoleUser, result.OfInputItemList[2].OfMessage.Role)
+}
+
+func TestResponsesRoleForMessage(t *testing.T) {
+	tests := []struct {
+		role string
+		want responses.EasyInputMessageRole
+	}{
+		{"user", responses.EasyInputMessageRoleUser},
+		{"assistant", responses.EasyInputMessageRoleAssistant},
+		{"system", responses.EasyInputMessageRoleDeveloper},
+		{"developer", responses.EasyInputMessageRoleDeveloper},
+		{"tool", responses.EasyInputMessageRoleUser},
+		{"ASSISTANT", responses.EasyInputMessageRoleAssistant},
+		{" System ", responses.EasyInputMessageRoleDeveloper},
+		{"unknown", responses.EasyInputMessageRoleUser},
+		{"", responses.EasyInputMessageRoleUser},
+	}
+	for _, tt := range tests {
+		got := responsesRoleForMessage(tt.role)
+		if got != tt.want {
+			t.Errorf("responsesRoleForMessage(%q) = %v, want %v", tt.role, got, tt.want)
+		}
+	}
 }
 
 func TestConvertToolsToResponsesAPI(t *testing.T) {

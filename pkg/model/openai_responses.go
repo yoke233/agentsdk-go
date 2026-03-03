@@ -2,7 +2,6 @@ package model
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -367,91 +366,38 @@ func hasOpenAIImageContentBlocks(msgs []Message) bool {
 func buildResponsesMultimodalInput(msgs []Message) responses.ResponseInputParam {
 	items := make(responses.ResponseInputParam, 0, len(msgs))
 	for _, msg := range msgs {
-		role := strings.ToLower(strings.TrimSpace(msg.Role))
-		switch role {
-		case "assistant":
-			items = appendResponsesAssistantToolCalls(items, msg)
-			parts := buildResponsesInputParts(msg, false)
-			if len(parts) == 0 {
-				continue
-			}
-			items = append(items, responses.ResponseInputItemParamOfMessage(parts, responses.EasyInputMessageRoleAssistant))
-		case "system":
-			parts := buildResponsesInputParts(msg, false)
-			if len(parts) == 0 {
-				continue
-			}
-			items = append(items, responses.ResponseInputItemParamOfMessage(parts, responses.EasyInputMessageRoleSystem))
-		case "developer":
-			parts := buildResponsesInputParts(msg, false)
-			if len(parts) == 0 {
-				continue
-			}
-			items = append(items, responses.ResponseInputItemParamOfMessage(parts, responses.EasyInputMessageRoleDeveloper))
-		case "tool":
-			before := len(items)
-			items = appendResponsesToolOutputs(items, msg)
-			if len(items) > before {
-				continue
-			}
-			parts := buildResponsesInputParts(msg, true)
-			if len(parts) == 0 {
-				continue
-			}
-			items = append(items, responses.ResponseInputItemParamOfMessage(parts, responses.EasyInputMessageRoleUser))
-		default: // user/unknown
-			parts := buildResponsesInputParts(msg, true)
-			if len(parts) == 0 {
-				continue
-			}
-			items = append(items, responses.ResponseInputItemParamOfMessage(parts, responses.EasyInputMessageRoleUser))
-		}
-	}
-	return items
-}
-
-func appendResponsesAssistantToolCalls(items responses.ResponseInputParam, msg Message) responses.ResponseInputParam {
-	for _, call := range msg.ToolCalls {
-		callID := strings.TrimSpace(call.ID)
-		name := strings.TrimSpace(call.Name)
-		if callID == "" || name == "" {
+		apiRole := responsesRoleForMessage(msg.Role)
+		parts := buildResponsesInputParts(msg)
+		if len(parts) == 0 {
 			continue
 		}
-		items = append(items, responses.ResponseInputItemParamOfFunctionCall(marshalToolCallArguments(call.Arguments), callID, name))
+		items = append(items, responses.ResponseInputItemUnionParam{
+			OfMessage: &responses.EasyInputMessageParam{
+				Role: apiRole,
+				Content: responses.EasyInputMessageContentUnionParam{
+					OfInputItemContentList: parts,
+				},
+			},
+		})
 	}
 	return items
 }
 
-func appendResponsesToolOutputs(items responses.ResponseInputParam, msg Message) responses.ResponseInputParam {
-	for _, call := range msg.ToolCalls {
-		callID := strings.TrimSpace(call.ID)
-		if callID == "" {
-			continue
-		}
-		output := strings.TrimSpace(call.Result)
-		if output == "" {
-			output = strings.TrimSpace(msg.Content)
-		}
-		if output == "" {
-			output = "."
-		}
-		items = append(items, responses.ResponseInputItemParamOfFunctionCallOutput(callID, output))
+// responsesRoleForMessage maps SDK message roles to Responses API roles.
+// Tool results and unknown roles are mapped to user because EasyInputMessage
+// doesn't have a tool role.
+func responsesRoleForMessage(role string) responses.EasyInputMessageRole {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "assistant":
+		return responses.EasyInputMessageRoleAssistant
+	case "system", "developer":
+		return responses.EasyInputMessageRoleDeveloper
+	default: // user, tool, unknown
+		return responses.EasyInputMessageRoleUser
 	}
-	return items
 }
 
-func marshalToolCallArguments(args map[string]any) string {
-	if len(args) == 0 {
-		return "{}"
-	}
-	data, err := json.Marshal(args)
-	if err != nil || len(data) == 0 {
-		return "{}"
-	}
-	return string(data)
-}
-
-func buildResponsesInputParts(msg Message, fallbackPlaceholder bool) responses.ResponseInputMessageContentListParam {
+func buildResponsesInputParts(msg Message) responses.ResponseInputMessageContentListParam {
 	parts := make(responses.ResponseInputMessageContentListParam, 0, len(msg.ContentBlocks)+1)
 	if text := strings.TrimSpace(msg.Content); text != "" {
 		parts = append(parts, responses.ResponseInputContentUnionParam{
@@ -481,7 +427,7 @@ func buildResponsesInputParts(msg Message, fallbackPlaceholder bool) responses.R
 			}
 		}
 	}
-	if len(parts) == 0 && fallbackPlaceholder {
+	if len(parts) == 0 {
 		parts = append(parts, responses.ResponseInputContentUnionParam{
 			OfInputText: &responses.ResponseInputTextParam{
 				Text: ".",
