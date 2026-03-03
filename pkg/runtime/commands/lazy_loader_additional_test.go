@@ -108,3 +108,60 @@ func TestLoadCommandDirDuplicateNames(t *testing.T) {
 		t.Fatalf("expected duplicate command error, got %v", errs)
 	}
 }
+
+func TestLoadFromFSMergeOrderAndOverrideByCommandDirs(t *testing.T) {
+	root := t.TempDir()
+
+	defaultPath := filepath.Join(root, ".claude", "commands", "shared.md")
+	extraOne := filepath.Join(root, "extra-one")
+	extraTwo := filepath.Join(root, "extra-two")
+	sharedOverridePath := filepath.Join(extraTwo, "shared.md")
+
+	mustWrite(t, defaultPath, "from default")
+	mustWrite(t, filepath.Join(extraOne, "shared.md"), "from extra-one")
+	mustWrite(t, sharedOverridePath, "from extra-two")
+	mustWrite(t, filepath.Join(extraTwo, "unique.md"), "unique body")
+
+	regs, errs := LoadFromFS(LoaderOptions{
+		ProjectRoot: root,
+		CommandDirs: []string{extraOne, extraTwo},
+	})
+	if len(regs) != 2 {
+		t.Fatalf("expected 2 commands, got %d", len(regs))
+	}
+
+	regByName := map[string]CommandRegistration{}
+	for _, reg := range regs {
+		regByName[reg.Definition.Name] = reg
+	}
+
+	shared, ok := regByName["shared"]
+	if !ok {
+		t.Fatalf("expected shared command to be loaded")
+	}
+
+	sharedRes, err := shared.Handler.Handle(context.Background(), Invocation{})
+	if err != nil {
+		t.Fatalf("handle shared: %v", err)
+	}
+	out, ok := sharedRes.Output.(string)
+	if !ok {
+		t.Fatalf("expected string output, got %T", sharedRes.Output)
+	}
+	if out != "from extra-two" {
+		t.Fatalf("expected later directory override, got %q", out)
+	}
+	if sharedRes.Metadata == nil || sharedRes.Metadata["source"] != sharedOverridePath {
+		t.Fatalf("expected source to point to override file, got %#v", sharedRes.Metadata)
+	}
+
+	if !hasError(errs, "commands: warning: overriding command \"shared\"") {
+		t.Fatalf("expected override warning, got %v", errs)
+	}
+	if !hasError(errs, defaultPath) {
+		t.Fatalf("expected warning to include default path, got %v", errs)
+	}
+	if !hasError(errs, sharedOverridePath) {
+		t.Fatalf("expected warning to include override path, got %v", errs)
+	}
+}

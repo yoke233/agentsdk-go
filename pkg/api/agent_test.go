@@ -225,8 +225,7 @@ func TestRuntimePermissionAskAutoWhitelist(t *testing.T) {
 
 func TestRuntimeHookAskUsesPermissionHandler(t *testing.T) {
 	root := newClaudeProject(t)
-	dir := t.TempDir()
-	script := writeScript(t, dir, "ask.sh", shScript(
+	hookScript := writeScript(t, t.TempDir(), "ask.sh", shScript(
 		"#!/bin/sh\nprintf '{\"hookSpecificOutput\":{\"permissionDecision\":\"ask\"}}'\n",
 		"@echo {\"hookSpecificOutput\":{\"permissionDecision\":\"ask\"}}\r\n",
 	))
@@ -243,7 +242,7 @@ func TestRuntimeHookAskUsesPermissionHandler(t *testing.T) {
 		Tools:       []tool.Tool{toolImpl},
 		TypedHooks: []corehooks.ShellHook{{
 			Event:   coreevents.PreToolUse,
-			Command: script,
+			Command: hookScript,
 		}},
 		PermissionRequestHandler: func(context.Context, PermissionRequest) (coreevents.PermissionDecisionType, error) {
 			called++
@@ -269,8 +268,7 @@ func TestRuntimeHookAskUsesPermissionHandler(t *testing.T) {
 
 func TestRuntimeHookAskDeniedByPermissionHandler(t *testing.T) {
 	root := newClaudeProject(t)
-	dir := t.TempDir()
-	script := writeScript(t, dir, "ask.sh", shScript(
+	hookScript := writeScript(t, t.TempDir(), "ask.sh", shScript(
 		"#!/bin/sh\nprintf '{\"hookSpecificOutput\":{\"permissionDecision\":\"ask\"}}'\n",
 		"@echo {\"hookSpecificOutput\":{\"permissionDecision\":\"ask\"}}\r\n",
 	))
@@ -286,7 +284,7 @@ func TestRuntimeHookAskDeniedByPermissionHandler(t *testing.T) {
 		Tools:       []tool.Tool{toolImpl},
 		TypedHooks: []corehooks.ShellHook{{
 			Event:   coreevents.PreToolUse,
-			Command: script,
+			Command: hookScript,
 		}},
 		PermissionRequestHandler: func(context.Context, PermissionRequest) (coreevents.PermissionDecisionType, error) {
 			return coreevents.PermissionDeny, nil
@@ -364,23 +362,21 @@ func TestRuntimeToolExecutor_ErrorHistory(t *testing.T) {
 }
 
 func TestRuntimeToolExecutor_PreToolUseDenialAddsToolResult(t *testing.T) {
-	dir := t.TempDir()
-	script := writeScript(t, dir, "deny.sh", shScript(
-		"#!/bin/sh\nprintf '{\"decision\":\"deny\"}'\n",
-		"@echo {\"decision\":\"deny\"}\r\n",
-	))
-
 	reg := tool.NewRegistry()
 	impl := &echoTool{}
 	if err := reg.Register(impl); err != nil {
 		t.Fatalf("register tool: %v", err)
 	}
 	exec := tool.NewExecutor(reg, nil)
+	hookScript := writeScript(t, t.TempDir(), "deny.sh", shScript(
+		"#!/bin/sh\nprintf '{\"decision\":\"deny\"}'\n",
+		"@echo {\"decision\":\"deny\"}\r\n",
+	))
 
 	hookExec := corehooks.NewExecutor()
 	hookExec.Register(corehooks.ShellHook{
 		Event:   coreevents.PreToolUse,
-		Command: script,
+		Command: hookScript,
 	})
 
 	history := message.NewHistory()

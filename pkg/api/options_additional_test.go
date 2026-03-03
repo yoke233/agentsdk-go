@@ -56,6 +56,26 @@ func TestOptionsWithDefaultsPopulatesMissingFields(t *testing.T) {
 	}
 }
 
+func TestOptionsWithDefaultsNormalizesPluginPaths(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("AGENTSDK_PROJECT_ROOT", root)
+
+	raw := Options{
+		PluginRoot:         "plugins/acme",
+		PluginManifestPath: "manifests/custom-plugin.json",
+	}
+	applied := raw.withDefaults()
+
+	wantPluginRoot := filepath.Join(applied.ProjectRoot, "plugins", "acme")
+	if filepath.Clean(applied.PluginRoot) != filepath.Clean(wantPluginRoot) {
+		t.Fatalf("PluginRoot=%q, want %q", applied.PluginRoot, wantPluginRoot)
+	}
+	wantManifest := filepath.Join(applied.ProjectRoot, "manifests", "custom-plugin.json")
+	if filepath.Clean(applied.PluginManifestPath) != filepath.Clean(wantManifest) {
+		t.Fatalf("PluginManifestPath=%q, want %q", applied.PluginManifestPath, wantManifest)
+	}
+}
+
 func TestRuntimeHookAdapterRecordsAndIgnoresNilRecorder(t *testing.T) {
 	adapter := &runtimeHookAdapter{executor: &corehooks.Executor{}}
 	if _, err := adapter.PreToolUse(context.Background(), coreevents.ToolUsePayload{Name: "ping"}); err != nil {

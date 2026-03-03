@@ -142,6 +142,157 @@ func TestLoadSkillDirMissing(t *testing.T) {
 	}
 }
 
+func TestLoadFromFSMergeOrderAndOverrideBySkillDirs(t *testing.T) {
+	root := t.TempDir()
+	defaultPath := filepath.Join(root, ".claude", "skills", "shared", "SKILL.md")
+	extraOne := filepath.Join(root, "extra-one")
+	extraTwo := filepath.Join(root, "extra-two")
+
+	writeSkill(t, defaultPath, "shared", "from default")
+	writeSkill(t, filepath.Join(extraOne, "shared", "SKILL.md"), "shared", "from extra-one")
+	writeSkill(t, filepath.Join(extraTwo, "shared", "SKILL.md"), "shared", "from extra-two")
+	writeSkill(t, filepath.Join(extraTwo, "unique", "SKILL.md"), "unique", "unique body")
+
+	regs, errs := LoadFromFS(LoaderOptions{
+		ProjectRoot: root,
+		SkillDirs:   []string{extraOne, extraTwo},
+	})
+	if len(regs) != 2 {
+		t.Fatalf("expected 2 regs, got %d", len(regs))
+	}
+
+	regByName := map[string]SkillRegistration{}
+	for _, reg := range regs {
+		regByName[reg.Definition.Name] = reg
+	}
+
+	shared, ok := regByName["shared"]
+	if !ok {
+		t.Fatalf("expected shared skill to be loaded")
+	}
+	sharedRes, err := shared.Handler.Execute(context.Background(), ActivationContext{})
+	if err != nil {
+		t.Fatalf("execute shared: %v", err)
+	}
+	sharedOut, ok := sharedRes.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("expected shared output to be map, got %T", sharedRes.Output)
+	}
+	if sharedOut["body"] != "from extra-two" {
+		t.Fatalf("expected later directory override, got %v", sharedOut["body"])
+	}
+
+	warningText := strings.Join(errorStrings(errs), "\n")
+	if !strings.Contains(warningText, "overriding skill \"shared\"") {
+		t.Fatalf("expected override warning, got %v", errs)
+	}
+	if !strings.Contains(warningText, defaultPath) || !strings.Contains(warningText, filepath.Join(extraTwo, "shared", "SKILL.md")) {
+		t.Fatalf("expected warning to include source paths, got %v", errs)
+	}
+}
+
+func TestLoadFromFSNormalizesAndDeduplicatesSkillDirs(t *testing.T) {
+	root := t.TempDir()
+	customDir := filepath.Join(root, "custom-skills")
+	writeSkill(t, filepath.Join(customDir, "dedup", "SKILL.md"), "dedup", "dedup body")
+
+	regs, errs := LoadFromFS(LoaderOptions{
+		ProjectRoot:                 root,
+		DisableDefaultProjectSkills: true,
+		SkillDirs: []string{
+			"",
+			"   ",
+			"custom-skills",
+			customDir,
+			filepath.Join(root, ".", "custom-skills"),
+		},
+	})
+	if len(regs) != 1 {
+		t.Fatalf("expected 1 reg after dedupe, got %d", len(regs))
+	}
+	if len(errs) != 0 {
+		t.Fatalf("expected no warnings after dedupe, got %v", errs)
+	}
+}
+
+func TestLoadFromFSWarnsInvalidDirAndSkipsEmptyDir(t *testing.T) {
+	root := t.TempDir()
+	validDir := filepath.Join(root, "valid-skills")
+	emptyDir := filepath.Join(root, "empty-skills")
+	invalidPath := filepath.Join(root, "not-a-dir")
+
+	writeSkill(t, filepath.Join(validDir, "valid", "SKILL.md"), "valid", "valid body")
+	if err := os.MkdirAll(emptyDir, 0o755); err != nil {
+		t.Fatalf("mkdir empty dir: %v", err)
+	}
+	if err := os.WriteFile(invalidPath, []byte("file"), 0o600); err != nil {
+		t.Fatalf("write invalid path file: %v", err)
+	}
+
+	regs, errs := LoadFromFS(LoaderOptions{
+		ProjectRoot:                 root,
+		DisableDefaultProjectSkills: true,
+		SkillDirs:                   []string{"", "   ", emptyDir, invalidPath, validDir},
+	})
+	if len(regs) != 1 || regs[0].Definition.Name != "valid" {
+		t.Fatalf("expected valid skill only, got %#v", regs)
+	}
+
+	warningText := strings.Join(errorStrings(errs), "\n")
+	if !strings.Contains(warningText, "warning") || !strings.Contains(warningText, invalidPath) || !strings.Contains(warningText, "not a directory") {
+		t.Fatalf("expected invalid directory warning, got %v", errs)
+	}
+	if strings.Contains(warningText, emptyDir) {
+		t.Fatalf("empty dir should be silently skipped, got %v", errs)
+	}
+}
+
+func TestLoadFromFSSkillDirsHotReloadStillWorks(t *testing.T) {
+	root := t.TempDir()
+	extraDir := filepath.Join(root, "custom-skills")
+	skillPath := filepath.Join(extraDir, "hotextra", "SKILL.md")
+	writeSkill(t, skillPath, "hotextra", "initial body")
+
+	regs, errs := LoadFromFS(LoaderOptions{
+		ProjectRoot:                 root,
+		DisableDefaultProjectSkills: true,
+		SkillDirs:                   []string{extraDir},
+	})
+	if len(errs) != 0 {
+		t.Fatalf("unexpected warnings: %v", errs)
+	}
+	if len(regs) != 1 {
+		t.Fatalf("expected one reg, got %d", len(regs))
+	}
+
+	res1, err := regs[0].Handler.Execute(context.Background(), ActivationContext{})
+	if err != nil {
+		t.Fatalf("first execute: %v", err)
+	}
+	out1, ok := res1.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map output")
+	}
+	if out1["body"] != "initial body" {
+		t.Fatalf("unexpected initial body %v", out1["body"])
+	}
+
+	time.Sleep(10 * time.Millisecond)
+	writeSkill(t, skillPath, "hotextra", "updated body")
+
+	res2, err := regs[0].Handler.Execute(context.Background(), ActivationContext{})
+	if err != nil {
+		t.Fatalf("second execute: %v", err)
+	}
+	out2, ok := res2.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map output")
+	}
+	if out2["body"] != "updated body" {
+		t.Fatalf("expected updated body, got %v", out2["body"])
+	}
+}
+
 func TestSkillBodyLengthVariants(t *testing.T) {
 	if size := skillBodyLength(Result{}); size != 0 {
 		t.Fatalf("expected zero for empty result, got %d", size)
@@ -277,3 +428,17 @@ func (m *mockFileInfo) Mode() fs.FileMode  { return 0o644 }
 func (m *mockFileInfo) ModTime() time.Time { return m.modTime }
 func (m *mockFileInfo) IsDir() bool        { return false }
 func (m *mockFileInfo) Sys() any           { return nil }
+
+func errorStrings(errs []error) []string {
+	if len(errs) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(errs))
+	for _, err := range errs {
+		if err == nil {
+			continue
+		}
+		out = append(out, err.Error())
+	}
+	return out
+}

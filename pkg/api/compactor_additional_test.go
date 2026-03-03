@@ -84,15 +84,16 @@ func TestCompactor_HookDenySkips(t *testing.T) {
 	hist.Append(msgWithTokens("user", 20))
 	hist.Append(msgWithTokens("assistant", 20))
 	hist.Append(msgWithTokens("user", 20))
-
-	dir := t.TempDir()
-	script := writeScript(t, dir, "deny_compact.sh", shScript(
+	hookScript := writeScript(t, t.TempDir(), "precompact.sh", shScript(
 		"#!/bin/sh\nprintf '{\"continue\":false}'\n",
 		"@echo {\"continue\":false}\r\n",
 	))
 
 	exec := corehooks.NewExecutor()
-	exec.Register(corehooks.ShellHook{Event: coreevents.PreCompact, Command: script})
+	exec.Register(corehooks.ShellHook{
+		Event:   coreevents.PreCompact,
+		Command: hookScript,
+	})
 
 	comp := newCompactor("", CompactConfig{Enabled: true, Threshold: 0.1, PreserveCount: 1}, &summaryModel{content: "x"}, 10, exec)
 	_, ok, err := comp.maybeCompact(context.Background(), hist, "sess", nil)
@@ -263,15 +264,16 @@ func TestCompactor_HookAskSkips(t *testing.T) {
 	hist.Append(msgWithTokens("user", 20))
 	hist.Append(msgWithTokens("assistant", 20))
 	hist.Append(msgWithTokens("user", 20))
-
-	dir := t.TempDir()
-	script := writeScript(t, dir, "ask_compact.sh", shScript(
+	hookScript := writeScript(t, t.TempDir(), "precompact.sh", shScript(
 		"#!/bin/sh\nprintf '{\"continue\":false}'\n",
 		"@echo {\"continue\":false}\r\n",
 	))
 
 	exec := corehooks.NewExecutor()
-	exec.Register(corehooks.ShellHook{Event: coreevents.PreCompact, Command: script})
+	exec.Register(corehooks.ShellHook{
+		Event:   coreevents.PreCompact,
+		Command: hookScript,
+	})
 
 	comp := newCompactor("", CompactConfig{Enabled: true, Threshold: 0.1, PreserveCount: 1}, &summaryModel{content: "x"}, 10, exec)
 	_, ok, err := comp.maybeCompact(context.Background(), hist, "sess", nil)

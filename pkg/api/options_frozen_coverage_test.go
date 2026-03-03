@@ -36,6 +36,7 @@ func TestOptionsFrozenClonesCollections(t *testing.T) {
 		DisallowedTools: []string{"grep"},
 		CustomTools:     []tool.Tool{&stubTool{name: "custom"}},
 		MCPServers:      []string{"mcp://server"},
+		SkillDirs:       []string{"skills-a"},
 		TypedHooks:      []corehooks.ShellHook{{Env: map[string]string{"A": "B"}}},
 		HookMiddleware:  []coremw.Middleware{nil},
 		Skills:          []SkillRegistration{{Definition: skillDef}},
@@ -52,6 +53,7 @@ func TestOptionsFrozenClonesCollections(t *testing.T) {
 	opts.EnabledBuiltinTools[0] = "changed"
 	opts.DisallowedTools[0] = "changed"
 	opts.MCPServers[0] = "changed"
+	opts.SkillDirs[0] = "changed"
 	opts.Mode.CLI.Args[0] = "--changed"
 	opts.Mode.CLI.Flags["k"] = "changed"
 
@@ -63,6 +65,9 @@ func TestOptionsFrozenClonesCollections(t *testing.T) {
 	}
 	if len(frozen.MCPServers) != 1 || frozen.MCPServers[0] != "mcp://server" {
 		t.Fatalf("MCPServers=%v, want [mcp://server]", frozen.MCPServers)
+	}
+	if len(frozen.SkillDirs) != 1 || frozen.SkillDirs[0] != "skills-a" {
+		t.Fatalf("SkillDirs=%v, want [skills-a]", frozen.SkillDirs)
 	}
 	if frozen.Mode.CLI == nil || len(frozen.Mode.CLI.Args) != 1 || frozen.Mode.CLI.Args[0] != "--x" {
 		t.Fatalf("Mode.CLI.Args=%v, want [--x]", frozen.Mode.CLI)

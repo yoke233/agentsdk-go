@@ -103,6 +103,113 @@ func TestLoadFromFS_NoProjectDir(t *testing.T) {
 	}
 }
 
+func TestLoadFromFS_SubagentDirs(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, root, ".claude/agents/project.md", strings.Join([]string{
+		"---",
+		"name: project-agent",
+		"description: project definition",
+		"---",
+		"project prompt",
+	}, "\n"))
+	mustWrite(t, root, "extras/agents/extra.md", strings.Join([]string{
+		"---",
+		"name: extra-agent",
+		"description: extra definition",
+		"---",
+		"extra prompt",
+	}, "\n"))
+
+	regs, errs := LoadFromFS(LoaderOptions{
+		ProjectRoot:  root,
+		SubagentDirs: []string{"extras/agents"},
+	})
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if len(regs) != 2 {
+		t.Fatalf("expected 2 registrations, got %d", len(regs))
+	}
+
+	project := findRegistration(t, regs, "project-agent")
+	projectRes, err := project.Handler.Handle(context.Background(), Context{}, Request{Instruction: "run"})
+	if err != nil {
+		t.Fatalf("project handler error: %v", err)
+	}
+	if projectRes.Output != "project prompt" {
+		t.Fatalf("unexpected project output %q", projectRes.Output)
+	}
+
+	extra := findRegistration(t, regs, "extra-agent")
+	extraRes, err := extra.Handler.Handle(context.Background(), Context{}, Request{Instruction: "run"})
+	if err != nil {
+		t.Fatalf("extra handler error: %v", err)
+	}
+	if extraRes.Output != "extra prompt" {
+		t.Fatalf("unexpected extra output %q", extraRes.Output)
+	}
+}
+
+func TestLoadFromFS_SubagentDirs_DedupAndOverrideWarning(t *testing.T) {
+	root := t.TempDir()
+	projectPath := mustWrite(t, root, ".claude/agents/shared.md", strings.Join([]string{
+		"---",
+		"name: shared",
+		"description: project version",
+		"---",
+		"project prompt",
+	}, "\n"))
+	teamPath := mustWrite(t, root, "team/agents/shared.md", strings.Join([]string{
+		"---",
+		"name: shared",
+		"description: team version",
+		"---",
+		"team prompt",
+	}, "\n"))
+	customPath := mustWrite(t, root, "custom/agents/shared.md", strings.Join([]string{
+		"---",
+		"name: shared",
+		"description: custom version",
+		"---",
+		"custom prompt",
+	}, "\n"))
+
+	regs, errs := LoadFromFS(LoaderOptions{
+		ProjectRoot: root,
+		SubagentDirs: []string{
+			"team/agents",
+			join(root, "custom", "agents"),
+			"team/agents",
+			".claude/agents",
+		},
+	})
+
+	if len(regs) != 1 {
+		t.Fatalf("expected 1 registration, got %d", len(regs))
+	}
+	if len(errs) != 2 {
+		t.Fatalf("expected 2 override warnings, got %d (%v)", len(errs), errs)
+	}
+	if !hasErrorWithAll(errs, "subagent \"shared\" overridden", "old="+projectPath, "new="+teamPath) {
+		t.Fatalf("missing override warning for project->team: %v", errs)
+	}
+	if !hasErrorWithAll(errs, "subagent \"shared\" overridden", "old="+teamPath, "new="+customPath) {
+		t.Fatalf("missing override warning for team->custom: %v", errs)
+	}
+
+	shared := findRegistration(t, regs, "shared")
+	res, err := shared.Handler.Handle(context.Background(), Context{}, Request{Instruction: "run"})
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if res.Output != "custom prompt" {
+		t.Fatalf("expected custom prompt, got %q", res.Output)
+	}
+	if src, ok := res.Metadata["source"]; !ok || src != customPath {
+		t.Fatalf("expected source to be custom path, got %#v", res.Metadata)
+	}
+}
+
 func TestLoadFromFS_YAML(t *testing.T) {
 	root := t.TempDir()
 	body := strings.Join([]string{
@@ -326,6 +433,26 @@ func hasError(errs []error, substr string) bool {
 			continue
 		}
 		if strings.Contains(err.Error(), substr) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasErrorWithAll(errs []error, parts ...string) bool {
+	for _, err := range errs {
+		if err == nil {
+			continue
+		}
+		text := err.Error()
+		matched := true
+		for _, part := range parts {
+			if !strings.Contains(text, part) {
+				matched = false
+				break
+			}
+		}
+		if matched {
 			return true
 		}
 	}
