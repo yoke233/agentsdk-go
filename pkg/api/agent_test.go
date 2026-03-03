@@ -225,6 +225,10 @@ func TestRuntimePermissionAskAutoWhitelist(t *testing.T) {
 
 func TestRuntimeHookAskUsesPermissionHandler(t *testing.T) {
 	root := newClaudeProject(t)
+	hookScript := writeScript(t, t.TempDir(), "ask.sh", shScript(
+		"#!/bin/sh\nprintf '{\"hookSpecificOutput\":{\"permissionDecision\":\"ask\"}}'\n",
+		"@echo {\"hookSpecificOutput\":{\"permissionDecision\":\"ask\"}}\r\n",
+	))
 	mdl := &stubModel{responses: []*model.Response{
 		{Message: model.Message{Role: "assistant", ToolCalls: []model.ToolCall{{ID: "1", Name: "echo", Arguments: map[string]any{"text": "hi"}}}}},
 		{Message: model.Message{Role: "assistant", Content: "done"}},
@@ -238,7 +242,7 @@ func TestRuntimeHookAskUsesPermissionHandler(t *testing.T) {
 		Tools:       []tool.Tool{toolImpl},
 		TypedHooks: []corehooks.ShellHook{{
 			Event:   coreevents.PreToolUse,
-			Command: `printf '{"hookSpecificOutput":{"permissionDecision":"ask"}}'`,
+			Command: hookScript,
 		}},
 		PermissionRequestHandler: func(context.Context, PermissionRequest) (coreevents.PermissionDecisionType, error) {
 			called++
@@ -264,6 +268,10 @@ func TestRuntimeHookAskUsesPermissionHandler(t *testing.T) {
 
 func TestRuntimeHookAskDeniedByPermissionHandler(t *testing.T) {
 	root := newClaudeProject(t)
+	hookScript := writeScript(t, t.TempDir(), "ask.sh", shScript(
+		"#!/bin/sh\nprintf '{\"hookSpecificOutput\":{\"permissionDecision\":\"ask\"}}'\n",
+		"@echo {\"hookSpecificOutput\":{\"permissionDecision\":\"ask\"}}\r\n",
+	))
 	mdl := &stubModel{responses: []*model.Response{
 		{Message: model.Message{Role: "assistant", ToolCalls: []model.ToolCall{{ID: "1", Name: "echo", Arguments: map[string]any{"text": "hi"}}}}},
 		{Message: model.Message{Role: "assistant", Content: "done"}},
@@ -276,7 +284,7 @@ func TestRuntimeHookAskDeniedByPermissionHandler(t *testing.T) {
 		Tools:       []tool.Tool{toolImpl},
 		TypedHooks: []corehooks.ShellHook{{
 			Event:   coreevents.PreToolUse,
-			Command: `printf '{"hookSpecificOutput":{"permissionDecision":"ask"}}'`,
+			Command: hookScript,
 		}},
 		PermissionRequestHandler: func(context.Context, PermissionRequest) (coreevents.PermissionDecisionType, error) {
 			return coreevents.PermissionDeny, nil
@@ -360,11 +368,15 @@ func TestRuntimeToolExecutor_PreToolUseDenialAddsToolResult(t *testing.T) {
 		t.Fatalf("register tool: %v", err)
 	}
 	exec := tool.NewExecutor(reg, nil)
+	hookScript := writeScript(t, t.TempDir(), "deny.sh", shScript(
+		"#!/bin/sh\nprintf '{\"decision\":\"deny\"}'\n",
+		"@echo {\"decision\":\"deny\"}\r\n",
+	))
 
 	hookExec := corehooks.NewExecutor()
 	hookExec.Register(corehooks.ShellHook{
 		Event:   coreevents.PreToolUse,
-		Command: `printf '{"decision":"deny"}'`,
+		Command: hookScript,
 	})
 
 	history := message.NewHistory()
